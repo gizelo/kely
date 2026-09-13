@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+.local
+.next
+node_modules
+docs
+tests
+design-qa.md
+*.log
+*.tsbuildinfo
+.agents
+.codex

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: kely-beta
+    runtime: docker
+    plan: free
+    region: frankfurt
+    autoDeploy: false
+    healthCheckPath: /api/health
+    envVars:
+      - key: KELY_RUNTIME
+        value: cloud
+      - key: KELY_PROVIDER_MODE
+        value: fixture
+      - key: KELY_LIVE_ENABLED
+        value: "false"
+      - key: KELY_BETA_ACCESS_ENABLED
+        value: "false"
+      - key: KELY_BASE_URL
+        sync: false
+      - key: KELY_DATABASE_URL
+        sync: false
+      - key: KELY_AUTH_SECRET
+        generateValue: true
+      - key: KELY_BUDGET_DESTINATION
+        value: kely-render-beta-20260913

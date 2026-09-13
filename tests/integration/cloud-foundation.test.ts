@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import test from "node:test";
+import { Pool } from "pg";
+import { BudgetStore } from "../../src/server/budget/store";
+import { CloudBudgetStore } from "../../src/server/budget/cloud-store";
+import { PostgresPrivateStorage, reserveOutputStorage, releaseOutputStorage } from "../../src/server/private-storage";
+import { initializeFakeBudget, fakeAttempt, fakeResponse } from "../helpers/budget-fixture";
+
+test("cloud import preserves exposure, serializes dispatch, saves private bytes and atomically rejects capacity overflow", async () => {
+  assert.match(process.env.KELY_DATABASE_URL ?? "", /\/kely_fixture_test$/);
+  const schema = `cloud_test_${randomUUID().replaceAll("-", "")}`;
+  const admin = new Pool({ connectionString: process.env.KELY_DATABASE_URL, max: 1 });
+  const pool = new Pool({ connectionString: process.env.KELY_DATABASE_URL, options: `-c search_path=${schema}`, max: 3 });
+  const location = initializeFakeBudget(path.join(realpathSync(await mkdtemp(path.join(os.tmpdir(), "kely-cloud-"))), "authority"));
+  const local = new BudgetStore(location);
+  try {
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await pool.query(await readFile(new URL("../../migrations/011_cloud_foundation.sql", import.meta.url), "utf8"));
+    const historical = fakeAttempt();
+    local.claim(historical);
+    local.markUncertain(historical.key, "timeout");
+    const fence = local.fenceForTransfer("fake-cloud-destination-003", local.exportHistory().rows.at(-1)!.hash);
+    const transfer = { ...fence, ...local.exportHistory() };
+    const cloud = new CloudBudgetStore(pool, fence.destination);
+    assert.deepEqual(await cloud.importFencedHistory(transfer), local.inspect());
+    assert.deepEqual(await cloud.importFencedHistory(transfer), local.inspect());
+    await assert.rejects(cloud.claim(fakeAttempt()));
+    await cloud.activate(fence.hash);
+    const attempts = [fakeAttempt(), fakeAttempt()];
+    const outcomes = await Promise.allSettled(attempts.map((attempt) => cloud.claim(attempt)));
+    assert.equal(outcomes.filter((result) => result.status === "fulfilled").length, 1);
+    const winner = attempts[outcomes.findIndex((result) => result.status === "fulfilled")];
+    await cloud.settle(winner.key, fakeResponse(winner.request));
+    assert.equal((await cloud.claim(winner)).dispatched, false);
+    const reopened = new CloudBudgetStore(pool, fence.destination);
+    assert.equal((await reopened.inspect()).uncertainMicros, transfer.state.uncertainMicros);
+    await assert.rejects(pool.query("DELETE FROM cloud_budget_event"));
+    const storage = new PostgresPrivateStorage(pool);
+    await reserveOutputStorage(pool, "fixture-output");
+    await reserveOutputStorage(pool, "fixture-output");
+    assert.equal(Number((await pool.query("SELECT reserved_bytes FROM cloud_storage_quota")).rows[0].reserved_bytes), 64_000_000);
+    await storage.put("asset", "test.png", Buffer.from("fixture image bytes"), "fixture-output");
+    assert.equal(Number((await pool.query("SELECT reserved_bytes FROM cloud_storage_quota")).rows[0].reserved_bytes), 64_000_000 - Buffer.byteLength("fixture image bytes"));
+    await releaseOutputStorage(pool, "fixture-output");
+    assert.equal(Number((await pool.query("SELECT reserved_bytes FROM cloud_storage_quota")).rows[0].reserved_bytes), 0);
+    assert.deepEqual(await storage.get("asset", "test.png"), Buffer.from("fixture image bytes"));
+    await assert.rejects(storage.put("asset", "test.png", Buffer.from("changed")));
+    await pool.query("UPDATE cloud_storage_quota SET used_bytes=199999999 WHERE singleton");
+    const writes = await Promise.allSettled([storage.put("material", "one.png", Buffer.from("1")), storage.put("material", "two.png", Buffer.from("2"))]);
+    assert.equal(writes.filter((result) => result.status === "fulfilled").length, 1);
+    assert.deepEqual(await storage.get("asset", "test.png"), Buffer.from("fixture image bytes"));
+    await assert.rejects(cloud.claim(fakeAttempt()));
+    assert.equal((await cloud.inspect()).reservedMicros, 0);
+  } finally {
+    local.close();
+    await pool.end();
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  }
+});
