@@ -6,6 +6,7 @@ import { assertSchemaReady } from "./lib/schema-ready";
 
 const children: ChildProcess[] = [];
 let stopping = false;
+let startupStage = "configuration";
 
 function stop() {
   if (stopping) return;
@@ -17,11 +18,14 @@ function stop() {
 
 async function main() {
   if (!config.cloud) throw new Error("The hosted launcher requires cloud configuration.");
+  startupStage = "schema readiness";
   await assertSchemaReady(pool);
   if (generationMode() === "openai") {
+    startupStage = "budget readiness";
     const budget = new CloudBudgetStore(pool, process.env.KELY_BUDGET_DESTINATION ?? "");
     await budget.inspect();
   }
+  startupStage = "process launch";
   await pool.end();
   const port = Number(process.env.PORT ?? 10000);
   if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid web port.");
@@ -38,4 +42,11 @@ async function main() {
   })));
 }
 
-main().catch(() => { console.error("Kely cloud startup stopped: check approved configuration, schema and budget transfer. No credentials are logged."); process.exitCode = 1; stop(); });
+main().catch(error => {
+  const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? ` (${error.code})`
+    : "";
+  console.error(`Kely cloud startup stopped during ${startupStage}${code}. No credentials are logged.`);
+  process.exitCode = 1;
+  stop();
+});
