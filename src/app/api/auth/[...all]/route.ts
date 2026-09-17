@@ -8,6 +8,10 @@ import { AppError } from "@/server/errors";
 const handlers = toNextJsHandler(auth);
 let activeSignups = 0;
 
+function replay(request: Request, body: string) {
+  return new Request(request.url, { method: request.method, headers: request.headers, body });
+}
+
 export function GET(request: Request) {
   return allowedLocalHost(request) ? handlers.GET(request) : localHostDenied();
 }
@@ -43,11 +47,11 @@ export async function POST(request: Request) {
         await assertPublicSignupCapacity();
         if (activeSignups >= 4) return Response.json({ message: "Account creation is busy. Try again in a moment." }, { status: 429 });
         activeSignups += 1;
-        try { return await handlers.POST(new Request(request, { body })); }
+        try { return await handlers.POST(replay(request, body)); }
         finally { activeSignups -= 1; }
       }
     }
-    return handlers.POST(new Request(request, { body }));
+    return handlers.POST(replay(request, body));
   } catch (error) {
     if (!(error instanceof AppError)) {
       const failure = error as { name?: unknown; message?: unknown; code?: unknown };
