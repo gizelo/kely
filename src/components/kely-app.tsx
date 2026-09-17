@@ -50,6 +50,18 @@ type View =
 const emptyDraft: Draft = { idea: "", platform: "linkedin", slideCount: 0 };
 const draftKey = "kely.draft.v1";
 
+function storedDraft(key: string): Draft | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) ?? "null") as Partial<Draft> | null;
+    if (!stored || typeof stored.idea !== "string") return null;
+    return {
+      idea: stored.idea.slice(0, 2000),
+      platform: stored.platform === "instagram" ? "instagram" : "linkedin",
+      slideCount: typeof stored.slideCount === "number" && stored.slideCount >= 0 && stored.slideCount <= 6 ? stored.slideCount : 0,
+    };
+  } catch { return null; }
+}
+
 export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [publications, setPublications] = useState<PublicationView[]>([]);
@@ -132,22 +144,8 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
 
   useEffect(() => {
     let active = true;
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem(draftKey) ?? "null",
-      ) as Partial<Draft> | null;
-      if (stored && typeof stored.idea === "string")
-        setDraft({
-          idea: stored.idea.slice(0, 2000),
-          platform: stored.platform === "instagram" ? "instagram" : "linkedin",
-          slideCount:
-            typeof stored.slideCount === "number" &&
-            stored.slideCount >= 0 &&
-            stored.slideCount <= 6
-              ? stored.slideCount
-              : 0,
-        });
-    } catch {}
+    const anonymousDraft = storedDraft(draftKey);
+    if (anonymousDraft) setDraft(anonymousDraft);
     void (async () => {
       try {
         const next = await request<AccountView>("/api/kely/account");
@@ -156,6 +154,8 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
         );
         if (!active) return;
         setAccount(next);
+        const ownerDraft = storedDraft(`${draftKey}.${next.user.id}`);
+        if (ownerDraft) setDraft(ownerDraft);
         setPublications(data.publications);
         let savedId: string | null = null;
         try {
@@ -186,9 +186,9 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
   useEffect(() => {
     if (!initialized) return;
     try {
-      localStorage.setItem(draftKey, JSON.stringify(draft));
+      localStorage.setItem(account ? `${draftKey}.${account.user.id}` : draftKey, JSON.stringify(draft));
     } catch {}
-  }, [draft, initialized]);
+  }, [account, draft, initialized]);
 
   const operationId = publication?.pendingOperation?.id;
   const operationStatus = publication?.pendingOperation?.status;
@@ -572,6 +572,11 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
             draft={draft}
             onChange={setDraft}
             onStart={() => void createPost()}
+            onCreateAccount={() => {
+              setAuthMode(inviteOnly ? "signin" : "signup");
+              focusAfterNavigation.current = true;
+              setView("auth");
+            }}
             onSignIn={() => {
               setAuthMode("signin");
               focusAfterNavigation.current = true;
@@ -729,7 +734,7 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
             )}
             {view === "intake" && <CreationIntake key={account.user.id} ownerId={account.user.id} draft={draft} busy={busy} run={run} onError={handleError} onBack={() => navigate("new")} onContinue={(materialIds, context) => void prepareCreation(materialIds, context)} />}
             {view === "billing" && (
-              <section className="creation-plan beta-usage"><span className="eyebrow">YOUR ACCOUNT</span><h1>Usage</h1><p>Your beta access includes a limited allowance. No subscription or payment is required.</p><dl><div><dt>Available</dt><dd>{account.billing.weeklyRemaining + account.billing.packRemaining} credits</dd></div><div><dt>In progress</dt><dd>{account.billing.reserved} credits</dd></div>{account.billing.nextResetAt && <div><dt>Next reset</dt><dd>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(account.billing.nextResetAt))}</dd></div>}</dl><p className="field-hint">Longer carousels and new visual versions use more of your allowance. Saved posts are always available to download.</p><a className="text-button" href="/beta-info">About the beta and your data</a></section>
+              <section className="creation-plan beta-usage"><span className="eyebrow">YOUR ACCOUNT</span><h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? "Choose your plan." : "Usage"}</h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? <><p>Kely saves your workspace now. Subscriptions are not open yet, so new accounts cannot start AI generation.</p><div className="plans-grid"><article className="plan-card"><h2>Starter</h2><div className="plan-allowance">100<span>credits / week</span></div><p>For a steady social rhythm.</p><button className="button secondary full-width" disabled>Coming soon</button></article><article className="plan-card plan-studio"><h2>Studio</h2><div className="plan-allowance">300<span>credits / week</span></div><p>For frequent posts and longer carousels.</p><button className="button primary full-width" disabled>Coming soon</button></article></div><p className="field-hint">No payment will be taken. Your saved idea stays in this browser.</p></> : <><p>Your account includes a limited creative allowance.</p><dl><div><dt>Available</dt><dd>{account.billing.weeklyRemaining + account.billing.packRemaining} credits</dd></div><div><dt>In progress</dt><dd>{account.billing.reserved} credits</dd></div>{account.billing.nextResetAt && <div><dt>Next reset</dt><dd>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(account.billing.nextResetAt))}</dd></div>}</dl><p className="field-hint">Longer carousels and new visual versions use more of your allowance. Saved posts are always available to download.</p></>}<a className="text-button" href="/beta-info">Privacy and data</a></section>
             )}
             {view === "business" && (
               <BrandWorkspace

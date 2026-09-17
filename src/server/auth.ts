@@ -11,6 +11,6 @@ export const auth = betterAuth({
   telemetry: { enabled: false },
   trustedOrigins: config.origins,
   database: drizzleAdapter(db, { provider: "pg", schema }),
-  emailAndPassword: { enabled: true, minPasswordLength: 10, requireEmailVerification: false, disableSignUp: config.cloud },
+  emailAndPassword: { enabled: true, minPasswordLength: 10, requireEmailVerification: false, disableSignUp: !config.openSignup },
   advanced: { useSecureCookies: config.cloud },
 });

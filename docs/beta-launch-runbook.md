@@ -1,6 +1,6 @@
-# Closed beta launch gates
+# Cloud beta launch gates
 
-Status: 13 September 2026, not deployed. Invites and real cloud dispatch remain disabled.
+Status: deployed foundation; open signup with zero credits approved 17 September 2026. Real generation remains restricted to explicitly granted test allowances.
 
 ## Prepared resources
 
@@ -18,7 +18,7 @@ Status: 13 September 2026, not deployed. Invites and real cloud dispatch remain 
 6. Stop all local live processes. Read canonical budget status and head; no active dispatch is allowed. Back up the source ledger privately. Coordinator runs `scripts/transfer-budget.ts` preview, exact-head fence-export, inactive import, full state comparison, then activation. Preserve the full original USD10 history and retained liabilities. No other process gets a second allowance.
 7. Founder installs the existing approved provider key in Render. Enable real work only after the transfer matches and local spending is fenced. Test Girex, repeat preferences and a no-material business within the remaining shared allowance. Verify real downloads and saved artifacts after restart; no automatic retry of an unknown provider outcome.
 8. Obtain founder identity/contact and approval of the beta data notice. Do not promise automated deletion or a retention schedule that has not been implemented. Confirm manual deletion/export workflow before inviting testers.
-9. Founder accepts visual quality and complete flow. Then enable invites and issue at most three account invitations total, privately. Founder distributes them. No public signup, purchases or billing.
+9. Founder accepts visual quality and complete flow. Public registration may be enabled with zero credits and no checkout. Separately issue at most three allowance-bearing test invitations. No purchases or billing until the seller and payment release are approved.
 
 ## Stop and rollback
 

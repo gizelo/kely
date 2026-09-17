@@ -173,12 +173,14 @@ export function Landing({
   onChange,
   onStart,
   onSignIn,
+  onCreateAccount,
   busy,
 }: {
   draft: Draft;
   onChange: (draft: Draft) => void;
   onStart: () => void;
   onSignIn: () => void;
+  onCreateAccount: () => void;
   busy: boolean;
 }) {
   return (
@@ -189,7 +191,7 @@ export function Landing({
         />
         <nav aria-label="Main navigation">
           <a href="#examples">Examples</a>
-          <a href="/beta-info">About the beta</a>
+          <a href="/beta-info">Privacy</a>
           <button className="button quiet" onClick={onSignIn}>
             Log in
             <ArrowRight size={15} aria-hidden="true" />
@@ -214,7 +216,7 @@ export function Landing({
             busy={busy}
           />
           <p className="hero-footnote">
-            For LinkedIn & Instagram · Private beta, by invitation
+            For LinkedIn & Instagram · Start with an idea
           </p>
         </section>
         <div id="examples">
@@ -241,11 +243,11 @@ export function Landing({
         </section>
         <section className="landing-price-preview" aria-labelledby="landing-plans-title">
           <div>
-            <span className="eyebrow">LET’S BUILD SOMETHING GOOD</span>
-            <h2 id="landing-plans-title">A small, private beta.</h2>
-            <p>Kely is being tested with a few invited businesses. No payment required.</p>
+            <span className="eyebrow">START SIMPLY</span>
+            <h2 id="landing-plans-title">Create your Kely workspace.</h2>
+            <p>Save your ideas and brand materials. Creative plans become available with an active allowance.</p>
           </div>
-          <a className="text-button" href="/beta-info">How the beta works<ArrowRight size={16} /></a>
+          <button className="text-button" onClick={onCreateAccount}>Create an account<ArrowRight size={16} /></button>
         </section>
       </main>
       <footer className="site-footer">
@@ -336,6 +338,7 @@ export function AuthScreen({
               />
             </label>
             {mode === "signup" && <p className="field-hint">At least 10 characters.</p>}
+            {mode === "signup" && <p className="field-hint">By creating an account, you agree to the <a href="/beta-info" target="_blank" rel="noreferrer">terms and privacy information</a>.</p>}
             <button className="button primary full-width" disabled={busy}>
               {busy
                 ? "One moment…"
@@ -355,7 +358,7 @@ export function AuthScreen({
               {mode === "signup" ? "Log in" : "Create an account"}
             </button>
           </p>}
-          {inviteOnly && <p className="field-hint"><a href="/recover">Forgot your password?</a> Ask the beta organiser for a recovery link.</p>}
+          <p className="field-hint"><a href="/recover">Forgot your password?</a> Ask the operator for a recovery link.</p>
         </section>
         <aside className="auth-aside">
           <span className="eyebrow">AN IDEA IS ENOUGH TO BEGIN.</span>

@@ -15,6 +15,8 @@ services:
         value: "false"
       - key: KELY_BETA_ACCESS_ENABLED
         value: "false"
+      - key: KELY_OPEN_SIGNUP_ENABLED
+        value: "false"
       - key: KELY_BASE_URL
         sync: false
       - key: KELY_DATABASE_URL

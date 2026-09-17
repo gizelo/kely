@@ -1,8 +1,8 @@
-# Invite-only beta — approved 13 September 2026
+# Kely cloud beta
 
-Status: implementation in progress, not deployed or accepted.
+Status: open-registration transition approved 17 September 2026; generation remains allowance-gated and payments remain disabled.
 
-This founder-approved release supersedes earlier local-only scope and direct-to-result creation. It does not authorize sales, paid infrastructure, public signup, automatic top-ups, domain purchases or a larger API budget.
+The founder-approved 17 September transition supersedes the invite-only access rule below: public account creation is permitted, new accounts start with zero credits, and founder/test access remains separately granted. It does not authorize sales, automatic top-ups, domain purchases or a larger API budget.
 
 ## Product
 
@@ -12,7 +12,7 @@ The UI hides per-action prices and payment dialogs. Usage belongs in Account; lo
 
 ## Hosting and access
 
-Render Free + Neon Free, preferably EU regions. One web service runs web and worker processes; persisted operations survive idle/restart. No artificial keepalive. PostgreSQL holds private files and provider evidence under a combined 200 MB cap. Cloud starts with clean user data; local data remains untouched. At most three invited accounts, no live billing. Single-use expiring invitations and founder-issued recovery links, secure cookies, exact origin checks, rate limits and private owner-scoped downloads are release gates.
+Render Free + Neon Free, preferably EU regions. One web service runs web and worker processes; persisted operations survive idle/restart. No artificial keepalive. PostgreSQL holds private files and provider evidence under a combined 200 MB cap. Cloud starts with clean user data; local data remains untouched. Public signup grants no allowance and live billing stays disabled. Up to three separately invited test accounts may receive the test allowance. Single-use expiring invitations, founder-issued recovery links, secure cookies, exact origin checks, rate limits and private owner-scoped downloads remain release gates.
 
 The existing development authority has a USD 10 lifetime ceiling. Cloud transfer must preserve immutable history, retained liabilities and remaining allowance, fence local dispatch and verify the imported state before enabling cloud dispatch. No second allowance, ledger reset or uncertain paid retry. Only root may apply the actual transfer.
 

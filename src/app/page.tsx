@@ -4,5 +4,5 @@ import { config } from "../server/config";
 export const dynamic = "force-dynamic";
 
 export default function Page() {
-  return <KelyApp inviteOnly={config.cloud} />;
+  return <KelyApp inviteOnly={!config.openSignup} />;
 }
