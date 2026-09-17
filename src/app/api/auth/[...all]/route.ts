@@ -49,6 +49,14 @@ export async function POST(request: Request) {
     }
     return handlers.POST(new Request(request, { body }));
   } catch (error) {
+    if (!(error instanceof AppError)) {
+      const failure = error as { name?: unknown; message?: unknown; code?: unknown };
+      console.error("Kely account access failed.", {
+        name: typeof failure?.name === "string" ? failure.name : "UnknownError",
+        code: typeof failure?.code === "string" ? failure.code : undefined,
+        message: typeof failure?.message === "string" ? failure.message : "Unknown failure",
+      });
+    }
     return Response.json({ message: error instanceof AppError ? error.message : "Account access is temporarily unavailable." }, { status: error instanceof AppError ? error.status : 503 });
   }
 }
