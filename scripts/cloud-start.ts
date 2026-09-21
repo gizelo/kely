@@ -24,7 +24,7 @@ async function main() {
   if (generationMode() === "openai") {
     startupStage = "budget readiness";
     const budget = new CloudBudgetStore(pool, process.env.KELY_BUDGET_DESTINATION ?? "");
-    await budget.inspect();
+    await budget.reconcileInterruptedDispatch();
     console.log("Kely cloud budget is ready.");
   }
   startupStage = "process launch";

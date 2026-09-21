@@ -36,6 +36,14 @@ export class CloudBudgetStore {
 
   inspect() { return this.#transaction(async (_client, state) => state); }
 
+  async reconcileInterruptedDispatch() {
+    const state = await this.inspect();
+    const attempt = state.attempts.find((item) => item.status === "dispatching");
+    if (!attempt) return state;
+    await this.markUncertain(attempt.key, "transport_failed");
+    return this.inspect();
+  }
+
   reservePackage(input: BudgetPackageInput) {
     const detached = JSON.parse(canonicalJson(input)) as BudgetPackageInput;
     const maximumMicros = detached.steps.reduce((sum, item) => sum + item.maximumMicros, 0);

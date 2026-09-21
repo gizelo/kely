@@ -39,6 +39,13 @@ test("cloud import preserves exposure, serializes dispatch, saves private bytes 
     assert.equal((await cloud.claim(winner)).dispatched, false);
     const reopened = new CloudBudgetStore(pool, fence.destination);
     assert.equal((await reopened.inspect()).uncertainMicros, transfer.state.uncertainMicros);
+    const interrupted = fakeAttempt();
+    assert.equal((await reopened.claim(interrupted)).dispatched, true);
+    const reconciled = await reopened.reconcileInterruptedDispatch();
+    const interruptedAttempt = reconciled.attempts.find((attempt) => attempt.key === interrupted.key);
+    assert.equal(interruptedAttempt?.status, "uncertain");
+    assert.equal(interruptedAttempt?.uncertainMicros, interruptedAttempt?.maximumMicros);
+    assert.equal(reconciled.reservedMicros, 0);
     await assert.rejects(pool.query("DELETE FROM cloud_budget_event"));
     const storage = new PostgresPrivateStorage(pool);
     await reserveOutputStorage(pool, "fixture-output");
