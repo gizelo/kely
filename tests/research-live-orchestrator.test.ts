@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { researchPackageInput } from "../src/server/budget/research-package";
 import type { BrandEvidenceRecord, BrandIntelligenceSnapshot } from "../src/shared/brand-intelligence";
 import type { ResearchRunView, ResearchStatus } from "../src/server/brand-intelligence-store";
-import { runLiveResearch } from "../src/server/research-live-orchestrator";
+import { materialObservationEvidence, runLiveResearch } from "../src/server/research-live-orchestrator";
 import { analysisRequest, previewAnalysisResponse, type AnalysisInput } from "../src/server/providers/analysis";
 
 const runId = "00000000-0000-4000-8000-000000000001";
@@ -12,6 +12,16 @@ const reservation = researchPackageInput("owner", runId, "a".repeat(64));
 function view(): ResearchRunView { return { id: runId, ownerId: "owner", commandKey: "command-1", inputHash: "a".repeat(64), input: {}, supersedesRunId: null, status: "queued", statusDetail: {}, createdAt: new Date().toISOString(), sources: [], snapshots: [] }; }
 function raw(value: unknown) { return { output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] }; }
 const strategy = { kind: "research_strategy", brandProfile: { facts: [], tone: [], palette: [], typography: [], composition: [], allowedMaterials: [], prohibitions: [] }, plan: { platform: "linkedin", format: "single", slideCount: 1, purpose: "Introduce Acme", audience: "Salon owners", angle: "Simple scheduling", slides: [{ index: 1, objective: "Introduce", copy: "Meet Acme", visualDirection: "Clean product-led composition", claimKeys: [], materialIds: [] }], caption: "Meet Acme.", cta: "Learn more", visualSystem: "Clear and restrained" } } as const;
+
+test("material observations are split to the durable evidence limit with run-scoped stable IDs", () => {
+  const content = "a".repeat(1000);
+  const first = materialObservationEvidence(runId, "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
+  const repeated = materialObservationEvidence(runId, "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
+  const nextRun = materialObservationEvidence("00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
+  assert.deepEqual(first.map((item) => item.excerpt.length), [500, 500]);
+  assert.deepEqual(first.map((item) => item.id), repeated.map((item) => item.id));
+  assert.notDeepEqual(first.map((item) => item.id), nextRun.map((item) => item.id));
+});
 
 test("full durable pipeline uses one package, one critic and reaches review_ready", async () => {
   const run = view(); const statuses: ResearchStatus[] = []; const persisted: BrandEvidenceRecord[] = []; const snapshots: BrandIntelligenceSnapshot[] = []; const steps: string[] = []; let closed = 0;
@@ -71,8 +81,8 @@ test("optional materials use one package-bound vision call and persist observati
     async persistMaterialAnalysis(proposal) { persisted = proposal.observations.length; },
     async search() { return { candidates: [{ id: "acme", displayName: "Acme", canonicalUrl: "https://acme.example/", evidenceIds: [], signals: { userSuppliedUrl: true, officialSiteClaim: false, exactNameMatch: true, crossLinkedProfile: false } }], evidence: [], replayed: false, assessment: {} }; },
     async acquire() { return { evidence: [official], outcomes: [{ url: official.sourceUrl, role: "official", kind: "website", status: "complete" }] }; },
-    gateway: { async dispatch(attempt) { calls.push(attempt.step); assert.equal(attempt.packageId, materialReservation.id); if (attempt.step === "materials:0") return { response: previewAnalysisResponse(analysisRequest(materialInput, "brand-analysis-v2"), "research-material"), assessment: {}, replayed: false }; if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [{ key: "visual_reference", kind: "creative", value: "The supplied image is a visual reference.", provenance: "verified", confidence: "low", evidenceIds: [materialId] }], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
+    gateway: { async dispatch(attempt) { calls.push(attempt.step); assert.equal(attempt.packageId, materialReservation.id); if (attempt.step === "materials:0") return { response: previewAnalysisResponse(analysisRequest(materialInput, "brand-analysis-v2"), "research-material"), assessment: {}, replayed: false }; if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [{ key: "visual_reference", kind: "creative", value: "The supplied image is a visual reference.", provenance: "verified", confidence: "low", evidenceIds: [run.sources.find((item) => item.sourceKind === "upload")!.id] }], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
     async closeFromDurableEvidence() {},
   });
-  assert.equal(result.status, "review_ready"); assert.equal(persisted, 1); assert.equal(run.sources.some((item) => item.id === materialId && item.sourceRole === "user_provided"), true); assert.deepEqual(calls, ["materials:0", "extract:0", "strategy:0", "check:0"]);
+  assert.equal(result.status, "review_ready"); assert.equal(persisted, 1); assert.equal(run.sources.some((item) => item.sourceUrl.endsWith(materialId) && item.sourceRole === "user_provided"), true); assert.deepEqual(calls, ["materials:0", "extract:0", "strategy:0", "check:0"]);
 });

@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { BudgetPackageInput } from "./budget/store";
-import type { BrandIntelligenceSnapshot, BrandResearchInput, EntityCandidate } from "../shared/brand-intelligence";
+import type { BrandEvidenceRecord, BrandIntelligenceSnapshot, BrandResearchInput, EntityCandidate } from "../shared/brand-intelligence";
 import type { ResearchRunView, ResearchStatus, SourceOutcome } from "./brand-intelligence-store";
 import { assembleResearchContext } from "./brand-intelligence-context";
 import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot, evidenceRecordFromSpan } from "./brand-intelligence";
@@ -46,6 +46,17 @@ function normalizedEntityName(value: string) {
   return value.normalize("NFKC").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+export function materialObservationEvidence(runId: string, materialId: string, content: string, fetchedAt: string) {
+  const records: BrandEvidenceRecord[] = [];
+  for (let start = 0, index = 0; start < content.length; start += 500, index += 1) {
+    const end = Math.min(content.length, start + 500);
+    const hex = createHash("sha256").update(`${runId}:material:${materialId}:${index}`, "utf8").digest("hex").slice(0, 32);
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    records.push(evidenceRecordFromSpan({ id, sourceKind: "upload", sourceRole: "user_provided", sourceUrl: `https://kely.invalid/material/${materialId}`, content, span: { start, end }, fetchedAt }));
+  }
+  return records;
+}
+
 export async function runLiveResearch(ownerId: string, runId: string, input: BrandResearchInput, reservation: BudgetPackageInput, dependencies: LiveResearchDependencies) {
   exactReservation(reservation, ownerId, runId); await dependencies.verifyReservation(reservation);
   const current = await dependencies.store.read(ownerId, runId);
@@ -62,18 +73,12 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
       const reply = await dependencies.gateway.dispatch(bindResearchAttempt({ key: `kely:${runId}:materials:0`, ownerId, operationId: runId, step: "materials:0", snapshot: { acceptedHash: inputHash(dependencies.materialInput), input: dependencies.materialInput }, request }, reservation));
       materialAnalysis = parseAnalysis(reply.response, dependencies.materialInput, "brand-analysis-v2");
       await dependencies.persistMaterialAnalysis(materialAnalysis, inputHash(request));
+      const fetchedAt = new Date().toISOString();
       for (const observation of materialAnalysis.observations) {
-        const evidence = evidenceRecordFromSpan({
-          id: observation.materialId,
-          sourceKind: "upload",
-          sourceRole: "user_provided",
-          sourceUrl: `https://kely.invalid/material/${observation.materialId}`,
-          content: observation.evidence,
-          span: { start: 0, end: observation.evidence.length },
-          fetchedAt: new Date().toISOString(),
-        });
-        materialEvidence.push(evidence);
-        await dependencies.store.addSource(ownerId, runId, evidence, "complete");
+        for (const evidence of materialObservationEvidence(runId, observation.materialId, observation.evidence, fetchedAt)) {
+          materialEvidence.push(evidence);
+          await dependencies.store.addSource(ownerId, runId, evidence, "complete");
+        }
       }
     } else if (reservation.steps.some((item) => item.step === "materials:0")) throw new Error("research_material_reservation_unexpected");
     const first = await dependencies.search({ ownerId, runId, businessName: input.businessName, category: input.category, location: input.location, userSuppliedUrls: input.userSuppliedUrls, searchNumber: 1, fetchedAt: new Date().toISOString(), reservation });
