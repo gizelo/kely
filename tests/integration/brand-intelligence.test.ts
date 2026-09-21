@@ -24,6 +24,8 @@ test("durable research is idempotent, owner-scoped, append-only and retains part
     const input = { businessName: "Example", urls: ["https://example.com"] };
     const created = await store.start(ownerId, input, key);
     assert.equal(created.status, "queued");
+    const minimal = await store.start(ownerId, { businessName: "Minimal", category: undefined, location: undefined }, `minimal-${randomUUID()}`);
+    assert.deepEqual(minimal.input, { businessName: "Minimal" });
     assert.equal((await store.start(ownerId, { urls: ["https://example.com"], businessName: "Example" }, key)).id, created.id);
     await assert.rejects(store.start(ownerId, { businessName: "Changed" }, key), { code: "idempotency_conflict" });
     await assert.rejects(store.read(foreignId, created.id), { code: "research_not_found" });

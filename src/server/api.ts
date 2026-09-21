@@ -180,6 +180,7 @@ export async function handleApi(request: Request, path: string[]) {
       ...("code" in error && typeof error.code === "string" && /^[0-9A-Z]{5}$/u.test(error.code) ? { code: error.code } : {}),
       ...("constraint" in error && typeof error.constraint === "string" && /^[a-z0-9_]{1,120}$/u.test(error.constraint) ? { constraint: error.constraint } : {}),
       ...("table" in error && typeof error.table === "string" && /^[a-z0-9_]{1,120}$/u.test(error.table) ? { table: error.table } : {}),
+      ...("routine" in error && typeof error.routine === "string" && /^[a-zA-Z0-9_]{1,120}$/u.test(error.routine) ? { routine: error.routine } : {}),
     } : { name: "UnknownError" };
     console.error("Kely request failed; no credentials or request bodies are logged.", diagnostic);
     return Response.json({ error: { code: "server_error", message: "The local service could not complete this request. Your saved work is preserved." } }, { status: 500 });
