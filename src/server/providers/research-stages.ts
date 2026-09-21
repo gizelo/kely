@@ -184,9 +184,19 @@ function validateAttribution(item: z.infer<typeof attributedRuleSchema> | z.infe
 
 export function parseExtractionStageResponse(raw: unknown, evidenceRecords: BrandEvidenceRecord[]) {
   const parsed = researchExtractionSchema.parse(structuredOutput(raw));
-  const result = { ...parsed, claims: parsed.claims.map((item) => item.kind === "creative" && item.provenance === "proposed" ? { ...item, evidenceIds: [] } : item) };
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   if (evidence.size !== evidenceRecords.length) throw new Error("research_evidence_duplicate");
+  const result = { ...parsed, claims: parsed.claims.map((item) => {
+    if (item.kind !== "creative") return item;
+    if (item.provenance === "proposed") return { ...item, evidenceIds: [] };
+    if (item.provenance !== "user_provided") return item;
+    const evidenceIds = item.evidenceIds.filter((id) => {
+      const record = evidence.get(id);
+      if (!record) throw new Error("research_evidence_missing");
+      return record.sourceRole === "user_provided";
+    });
+    return evidenceIds.length ? { ...item, evidenceIds } : { ...item, provenance: "proposed" as const, evidenceIds: [] };
+  }) };
   unique(result.claims.map((item) => item.key), "research_claim_duplicate");
   result.claims.forEach((item) => {
     if (item.provenance === "proposed" && item.kind !== "creative") throw new Error("proposed_fact_invalid");

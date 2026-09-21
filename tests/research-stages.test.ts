@@ -67,6 +67,19 @@ test("creative proposals cannot upgrade inspiration into supporting evidence", (
   assert.equal(parsed.claims[0].status, "proposed");
 });
 
+test("creative user guidance cannot inherit official attribution", () => {
+  const mixed = extraction({ claims: [{ key: "objective", kind: "creative", value: "Introduce the product", provenance: "user_provided", confidence: "high", evidenceIds: [official.id, user.id] }] });
+  const retained = parseExtractionStageResponse(response(mixed), [official, user]);
+  assert.deepEqual(retained.attributions[0].evidenceIds, [user.id]);
+  assert.equal(retained.claims[0].status, "confirmed");
+
+  const officialOnly = extraction({ claims: [{ key: "objective", kind: "creative", value: "Introduce the product", provenance: "user_provided", confidence: "high", evidenceIds: [official.id] }] });
+  const downgraded = parseExtractionStageResponse(response(officialOnly), [official]);
+  assert.deepEqual(downgraded.attributions[0].evidenceIds, []);
+  assert.equal(downgraded.attributions[0].provenance, "proposed");
+  assert.equal(downgraded.claims[0].status, "proposed");
+});
+
 test("strategy permits proposed creative direction but only references known facts", () => {
   const parsed = parseStrategyStageResponse(response(strategy()), claims, [official]);
   assert.equal(parsed.plan.slideCount, 2);
