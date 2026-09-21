@@ -9,7 +9,7 @@ import { rendererFonts, type RendererFont } from "./renderer-fonts";
 import { isolatedTextLayout } from "./font-process";
 
 const executeFile = promisify(execFile);
-const fontScanner = "/opt/homebrew/bin/fc-scan";
+const fontScanner = process.platform === "darwin" ? "/opt/homebrew/bin/fc-scan" : "/usr/bin/fc-scan";
 const maximumTextBytes = 16_384;
 
 export interface TextRectangle {

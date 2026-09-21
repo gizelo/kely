@@ -14,6 +14,9 @@ RUN pnpm exec next build --webpack
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends fontconfig \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /app /app
 USER node
 EXPOSE 10000
