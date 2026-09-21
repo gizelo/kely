@@ -273,6 +273,9 @@
 .creation-upload-list label { display: flex; align-items: center; gap: 12px; }
 .creation-upload-list input[type="checkbox"] { width: 20px; height: 20px; min-height: 20px; margin: 0; flex: 0 0 auto; accent-color: var(--accent); }
 .creation-upload-list img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.creation-file-input { width: 100%; min-height: 48px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--foreground); }
+.creation-file-input::file-selector-button { min-height: 32px; margin-right: 12px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--lime); color: var(--foreground); font: inherit; font-weight: 700; cursor: pointer; }
+.creation-file-input:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
 .creation-source-form input[type="file"].sr-only { width: 1px; height: 1px; min-height: 0; padding: 0; margin: -1px; border: 0; }
 .creation-confirmation { max-width: 720px; margin: 36px auto; padding: 36px; border: 1px solid var(--outline); border-radius: 22px; background: white; }
 .creation-confirmation > svg { margin-bottom: 20px; color: var(--accent); }

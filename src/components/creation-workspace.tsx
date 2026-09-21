@@ -104,8 +104,7 @@ function SavedCreationIntake({ draft, ownerId, busy, run, onError, onBack, onCon
     {source === "materials" && <div className="creation-source-form">
       <label htmlFor="creation-material-role">How should Kely use these?</label>
       <select id="creation-material-role" value={role} onChange={event => setRole(event.target.value as typeof role)} disabled={busy}><option value="reference">Learn the visual style</option><option value="original">Place the actual image in the post</option></select>
-      <label className="button secondary" htmlFor="creation-upload"><ImagePlus size={18} />Choose an image</label>
-      <input ref={input} id="creation-upload" className="sr-only" type="file" accept="image/png,image/jpeg" disabled={busy || data.loading} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
+      <input ref={input} id="creation-upload" className="creation-file-input" type="file" accept="image/png,image/jpeg" disabled={busy || data.loading} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
       <p className="field-hint">Upload logos, product screenshots or photos as actual images. Upload past posts as style references.</p>
     </div>}
     {source === "link" && <form onSubmit={event => void importLink(event)} className="creation-source-form"><label htmlFor="creation-link">Website or social post</label><input id="creation-link" type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" required disabled={busy} /><button className="button secondary" disabled={busy || data.loading || !url.trim()}>Add reference</button></form>}
