@@ -90,6 +90,18 @@ test("strategy permits proposed creative direction but only references known fac
   assert.throws(() => parseStrategyStageResponse(response(unknown), claims, [official]), /research_plan_claim_missing/u);
 });
 
+test("strategy drops unrecognized profile facts and preserves user-provided fact provenance", () => {
+  const output = strategy();
+  output.brandProfile.facts = [
+    { key: "category", value: "Scheduling software", provenance: "verified", confidence: "high", evidenceIds: [user.id] },
+    { key: "legal_entity", value: "Example LLC", provenance: "verified", confidence: "high", evidenceIds: [external.id] },
+  ];
+  const parsed = parseStrategyStageResponse(response(output), claims, [official, user, external]);
+  assert.deepEqual(parsed.brandProfile.facts, [
+    { key: "category", value: "Scheduling software", provenance: "user_provided", confidence: "high", evidenceIds: [user.id] },
+  ]);
+});
+
 test("critic pass is immutable while one explicit corrected result is accepted", () => {
   const original = strategy();
   const passed = parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: original }), original, claims, [official]);

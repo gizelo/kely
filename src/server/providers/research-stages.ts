@@ -227,10 +227,25 @@ function validateStrategy(result: z.infer<typeof researchStrategySchema>, claims
   return result;
 }
 
+function normalizeStrategyFacts(result: z.infer<typeof researchStrategySchema>, claims: ReadonlyMap<string, BrandIntelligenceClaim>, evidence: Map<string, BrandEvidenceRecord>) {
+  const facts = result.brandProfile.facts.flatMap((fact) => {
+    if (!claims.has(fact.key)) return [];
+    if (fact.provenance !== "verified") return [fact];
+    const records = fact.evidenceIds.map((id) => evidence.get(id));
+    if (records.length > 0 && records.every((record) => record?.sourceRole === "user_provided")) {
+      return [{ ...fact, provenance: "user_provided" as const }];
+    }
+    return [fact];
+  });
+  return { ...result, brandProfile: { ...result.brandProfile, facts } };
+}
+
 export function parseStrategyStageResponse(raw: unknown, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[]) {
   const claimMap = new Map(claims.map((item) => [item.key, item]));
   if (claimMap.size !== claims.length) throw new Error("research_claim_duplicate");
-  return validateStrategy(researchStrategySchema.parse(structuredOutput(raw)), claimMap, new Map(evidenceRecords.map((item) => [item.id, item])));
+  const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
+  const parsed = researchStrategySchema.parse(structuredOutput(raw));
+  return validateStrategy(normalizeStrategyFacts(parsed, claimMap, evidence), claimMap, evidence);
 }
 
 function canonical(value: unknown): string {
