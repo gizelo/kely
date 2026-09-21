@@ -24,6 +24,7 @@ import { buildImageRequest, buildLandscapeImageRequest } from "./providers/image
 import { parseArtwork } from "./providers/image-generation";
 import { LayoutOverflow, UnsupportedGlyph } from "./layout";
 import { reserveCreationStorage, releaseCreationStorage } from "./private-storage-runtime";
+import { autoSaveDurableRevisionPreferences } from "./preferences";
 
 type StepInput = { acceptedHash: string; snapshot: unknown; request: BoundedProviderRequest };
 type StepOutput<T> = { value: T; cost: CostEvidence };
@@ -50,6 +51,7 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
     let currentStep = "";
     let currentCost: CostEvidence | undefined;
     let knownResult = false;
+    let revisionMessageId: string | undefined;
     await pool.query("UPDATE operation SET status='running',updated_at=now() WHERE id=$1", [id]);
 
     async function costs() {
@@ -126,7 +128,10 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
         replies++;
         if (!input.revision) { state.uncertainFacts = output.uncertainFacts; state.proposedBrief = output.brief; }
         state.preferenceProposals = [...(input.revision ? state.preferenceProposals ?? [] : []), ...output.preferences ?? []];
-        if (input.revision) state.messages.push({ id: snapshot.quoteId, role: "user", text: input.revision.instruction, createdAt: new Date().toISOString() });
+        if (input.revision) {
+          revisionMessageId = snapshot.quoteId;
+          state.messages.push({ id: snapshot.quoteId, role: "user", text: input.revision.instruction, createdAt: new Date().toISOString() });
+        }
         state.messages.push({ id: stableId(id, `reply:${replies}`), role: "assistant", origin: input.origin, text: input.origin === "ai_preview" ? `[Simulated example]\n${[output.message, ...output.questions].join("\n\n")}` : [output.message, ...output.questions].join("\n\n"), createdAt: new Date().toISOString() });
         if (output.kind === "questions") {
           if (input.policy !== "plan-first-v1") requireCondition(replies < 3, "creation_limit", "Kely needs more information than this attempt could resolve. Your draft is preserved and the creation credits are released.", 409);
@@ -202,6 +207,7 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
         state.creation = { ...state.creation!, status: "ready", phase: "complete", questions: [], canReply: false };
         if (cost) state.cost = cost;
         delete state.pendingOperation; delete state.failure; delete state.failureCode;
+        if (input.revision) await autoSaveDurableRevisionPreferences(client, row.owner_id, id, revisionMessageId ?? stableId(id, "design:0"), input.revision.instruction, input.brand.version, state);
         await writePublication(client, state, "Complete post created", cost);
         await settleCredits(client, row.owner_id, id, true);
         await client.query("UPDATE creation_run SET state=$2,text_replies=$3 WHERE operation_id=$1", [id, JSON.stringify(state), replies]);

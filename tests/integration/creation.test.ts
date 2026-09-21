@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { pool } from "../../src/server/db";
 import { getBoss } from "../../src/server/queue";
 import { accountView, simulateBilling, type Viewer } from "../../src/server/credits";
-import { readBrand, uploadBrandMaterial, updateBrandRule } from "../../src/server/brand";
+import { readBrand, undoBrand, uploadBrandMaterial, updateBrandRule } from "../../src/server/brand";
 import { defaultArtDirection } from "../../src/server/brand-policy";
 import { acceptCreation, cancelCreation, generateCreation, quoteCreation, quoteCreationRevision, readCreation, replyCreation } from "../../src/server/creation";
 import { runCreation } from "../../src/server/creation-runner";
@@ -18,7 +18,6 @@ import { BudgetStore } from "../../src/server/budget/store";
 import { FakeProviderGateway } from "../../src/server/providers/gateway";
 import { previewTransport } from "../../src/server/providers/preview-transport";
 import { initializeFakeBudget } from "../helpers/budget-fixture";
-import { confirmPreference } from "../../src/server/preferences";
 
 assert.match(process.env.KELY_DATABASE_URL ?? "", /\/kely_fixture_test$/u);
 process.env.KELY_PROVIDER_MODE = "ai_preview";
@@ -118,16 +117,17 @@ test("plan approval includes analysis, replays durable results and preserves sco
     for (const index of [0, 2]) assert.deepEqual((await readAsset(user.id, publication.slides[index].assetId!)).bytes, baselineBytes[index].bytes);
     assert.ok((await exportPublication(user.id, publication.id, "zip")).bytes.length);
     assert.ok((await exportPublication(user.id, publication.id, "pdf")).bytes.length);
-    const suggestion = publication.preferenceProposals?.find((item) => item.field === "headlines");
-    assert.ok(suggestion);
-    const confirm = { proposalId: suggestion.id, version: publication.version, brandVersion: (await readBrand(user.id)).version, commandKey: randomUUID() };
-    await assert.rejects(confirmPreference(user, publication.id, { ...confirm, scope: "local" }), { code: "preference_scope" });
-    const remembered = await confirmPreference(user, publication.id, { ...confirm, scope: "durable" });
-    assert.equal(remembered.publication.status, "ready");
-    assert.equal(remembered.publication.creation?.status, "ready");
-    assert.deepEqual(remembered.publication.slides, publication.slides);
-    assert.equal(remembered.publication.caption, publication.caption);
-    assert.equal(remembered.brand.rules.headlines, "shorter");
+    assert.equal(publication.preferenceProposals?.some((item) => item.field === "headlines"), false);
+    assert.equal(publication.autoSavedPreferences?.length, 1);
+    let remembered = await readBrand(user.id);
+    assert.equal(remembered.rules.headlines, "shorter");
+    const eventId = publication.autoSavedPreferences![0].eventId;
+    assert.equal(remembered.events.find((event) => event.id === eventId)?.field, "headlines");
+    await runCreation(changed.operationId, { gateway: fake.gateway });
+    assert.equal((await pool.query("SELECT count(*)::int AS count FROM brand_event WHERE owner_id=$1 AND id=$2", [user.id, eventId])).rows[0].count, 1);
+    remembered = await undoBrand(user, eventId, randomUUID());
+    assert.equal(remembered.rules.headlines, "default");
+    assert.equal(remembered.events[0].undoOf, eventId);
   } finally { fake.close(); }
 });
 

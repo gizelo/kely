@@ -1,3 +1,3 @@
-import { AccessForm } from "./access-form";
+import { redirect } from "next/navigation";
 
-export default function InvitePage() { return <AccessForm />; }
+export default function InvitePage() { redirect("/"); }

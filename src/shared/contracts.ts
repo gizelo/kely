@@ -68,6 +68,7 @@ export interface PublicationView {
   brandPalette?: import("./brand").BrandPalette;
   readiness?: import("./brand").ReadinessView;
   preferenceProposals?: import("./preferences").PreferenceProposal[];
+  autoSavedPreferences?: import("./preferences").AutoSavedPreference[];
   localPreferences?: import("./preferences").LocalPreferences;
   fixture: boolean;
   origin?: GenerationOrigin;

@@ -14,6 +14,13 @@ function digest(token: string) { return createHash("sha256").update(token).diges
 
 export function accessRateKey(kind: string, identity: string) { return `${kind}:${digest(identity.trim().toLowerCase()).slice(0, 32)}`; }
 
+export function clientRateKey(kind: string, request: Request) {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
+  const direct = request.headers.get("x-real-ip")?.trim();
+  const identity = forwarded || direct || "unknown-client";
+  return accessRateKey(`${kind}-client`, identity.slice(0, 100));
+}
+
 export async function reservedInviteEmail(emailInput: string) {
   const email = emailSchema.parse(emailInput.trim());
   return transaction(async client => Boolean((await client.query("SELECT 1 FROM beta_access_token WHERE purpose='invite' AND email=$1 AND used_at IS NULL AND expires_at>now() LIMIT 1", [email])).rowCount));

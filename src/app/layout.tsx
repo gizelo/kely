@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Kely — Your AI designer",
   description:
-    "Your next post. More you. Shape the words and design for your business with Kely. Local founder preview.",
+    "On-brand LinkedIn and Instagram posts without the design work. Shape the plan with Kely, then generate and refine in words.",
   robots: { index: false, follow: false },
 };
 

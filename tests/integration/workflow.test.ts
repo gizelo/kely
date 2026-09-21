@@ -12,18 +12,23 @@ import { getBoss } from "../../src/server/queue";
 import type { PublicationView, QuoteView } from "../../src/shared/contracts";
 import { loadAcceptedInput } from "../../src/server/accepted-input";
 import { updateBrandRule } from "../../src/server/brand";
+import { createTestAccount } from "../../src/server/operator-access";
 
 assert.match(process.env.KELY_DATABASE_URL ?? "", /\/kely_fixture_test$/, "Integration tests require the isolated fixture test database.");
 
 type Client = { viewer: Viewer; cookie: string };
 async function createClient(): Promise<Client> {
   const marker = randomUUID();
-  const response = await auth.handler(new Request("http://localhost:3130/api/auth/sign-up/email", {
+  const email = `${marker}@fixture.example.test`;
+  const password = randomUUID();
+  const created = await createTestAccount({ name: "Kely fixture test", email, password, commandKey: `workflow-${marker}` });
+  const response = await auth.handler(new Request("http://localhost:3130/api/auth/sign-in/email", {
     method: "POST", headers: { "content-type": "application/json", origin: "http://localhost:3130", host: "localhost:3130" },
-    body: JSON.stringify({ name: "Kely fixture test", email: `${marker}@fixture.example.test`, password: randomUUID() }),
+    body: JSON.stringify({ email, password }),
   }));
   assert.equal(response.status, 200);
   const { user } = await response.json();
+  assert.equal(user.id, created.ownerId);
   return { viewer: { id: user.id, name: user.name, email: user.email }, cookie: response.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ") };
 }
 

@@ -62,12 +62,20 @@ function storedDraft(key: string): Draft | null {
   } catch { return null; }
 }
 
-export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
+export function KelyApp({
+  inviteOnly = false,
+  initialView = "landing",
+}: {
+  inviteOnly?: boolean;
+  initialView?: "landing" | "auth";
+}) {
   const [account, setAccount] = useState<AccountView | null>(null);
   const [publications, setPublications] = useState<PublicationView[]>([]);
   const [publication, setPublication] = useState<PublicationView | null>(null);
-  const [view, setView] = useState<View>("landing");
-  const [authMode, setAuthMode] = useState<"signup" | "signin">("signup");
+  const [view, setView] = useState<View>(initialView);
+  const [authMode, setAuthMode] = useState<"signup" | "signin">(
+    inviteOnly ? "signin" : "signup",
+  );
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [sourceAnalysisId, setSourceAnalysisId] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -565,7 +573,10 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
             setMode={setAuthMode}
             busy={busy}
             onSubmit={(values) => void authenticate(values)}
-            onBack={() => navigate("landing")}
+            onBack={() => {
+              if (initialView === "auth") window.location.assign("/");
+              else navigate("landing");
+            }}
           />
         ) : (
           <Landing
@@ -627,6 +638,10 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
             ))}
           </nav>
           <div className="sidebar-bottom">
+            <button className="post-balance" onClick={() => navigate("billing")} aria-label="View weekly post allowance">
+              <strong>{Math.floor((account.billing.weeklyRemaining + account.billing.packRemaining) / 30)}</strong>
+              <span>posts left</span>
+            </button>
             <details className="account-menu">
               <summary aria-label="Account menu">
                 <span className="avatar">
@@ -671,8 +686,11 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
                       setPublication(null);
                       setPublications([]);
                       currentPublicationId.current = null;
-                      focusAfterNavigation.current = true;
-                      setView("landing");
+                      if (initialView === "auth") window.location.assign("/");
+                      else {
+                        focusAfterNavigation.current = true;
+                        setView("landing");
+                      }
                     })
                   }
                 >
@@ -734,7 +752,7 @@ export function KelyApp({ inviteOnly = false }: { inviteOnly?: boolean }) {
             )}
             {view === "intake" && <CreationIntake key={account.user.id} ownerId={account.user.id} draft={draft} busy={busy} run={run} onError={handleError} onBack={() => navigate("new")} onContinue={(materialIds, context) => void prepareCreation(materialIds, context)} />}
             {view === "billing" && (
-              <section className="creation-plan beta-usage"><span className="eyebrow">YOUR ACCOUNT</span><h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? "Choose your plan." : "Usage"}</h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? <><p>Kely saves your workspace now. Subscriptions are not open yet, so new accounts cannot start AI generation.</p><div className="plans-grid"><article className="plan-card"><h2>Starter</h2><div className="plan-allowance">100<span>credits / week</span></div><p>For a steady social rhythm.</p><button className="button secondary full-width" disabled>Coming soon</button></article><article className="plan-card plan-studio"><h2>Studio</h2><div className="plan-allowance">300<span>credits / week</span></div><p>For frequent posts and longer carousels.</p><button className="button primary full-width" disabled>Coming soon</button></article></div><p className="field-hint">No payment will be taken. Your saved idea stays in this browser.</p></> : <><p>Your account includes a limited creative allowance.</p><dl><div><dt>Available</dt><dd>{account.billing.weeklyRemaining + account.billing.packRemaining} credits</dd></div><div><dt>In progress</dt><dd>{account.billing.reserved} credits</dd></div>{account.billing.nextResetAt && <div><dt>Next reset</dt><dd>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(account.billing.nextResetAt))}</dd></div>}</dl><p className="field-hint">Longer carousels and new visual versions use more of your allowance. Saved posts are always available to download.</p></>}<a className="text-button" href="/beta-info">Privacy and data</a></section>
+              <section className="creation-plan beta-usage"><span className="eyebrow">YOUR ACCOUNT</span><h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? "Access isn’t active yet." : "Your weekly allowance"}</h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? <><p>This workspace can save ideas, but creating posts requires beta access.</p><p className="field-hint">Contact the beta organiser if you expected access.</p></> : <><div className="usage-hero"><strong>{Math.floor((account.billing.weeklyRemaining + account.billing.packRemaining) / 30)}</strong><span>posts left this week</span></div><dl><div><dt>In progress</dt><dd>{account.billing.reserved > 0 ? "1 post" : "None"}</dd></div>{account.billing.nextResetAt && <div><dt>Next reset</dt><dd>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(account.billing.nextResetAt))}</dd></div>}</dl><p className="field-hint">A post includes planning, generation, and one focused refinement. Your finished posts stay available after the weekly reset.</p></>}<a className="text-button" href="/beta-info">Privacy and data</a></section>
             )}
             {view === "business" && (
               <BrandWorkspace

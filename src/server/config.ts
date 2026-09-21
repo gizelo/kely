@@ -24,7 +24,6 @@ export const config = {
   databaseUrl: process.env.KELY_DATABASE_URL ?? "postgresql://kely:kely_local_only@127.0.0.1:55432/kely_fixture",
   baseUrl: settings.baseUrl,
   cloud: settings.cloud,
-  openSignup: settings.openSignup,
   origins: settings.origins,
   assetRoot: path.resolve(".local/assets"),
   fixture: !settings.cloud,

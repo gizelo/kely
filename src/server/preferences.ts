@@ -4,6 +4,51 @@ import { transaction } from "./db";
 import { requireCondition } from "./errors";
 import { readPublication, writePublication } from "./publications";
 import { readBrand, updateBrandRuleInTransaction } from "./brand";
+import type { PoolClient } from "pg";
+import type { PublicationView } from "../shared/contracts";
+
+export async function autoSaveDurableRevisionPreferences(
+  client: PoolClient,
+  ownerId: string,
+  operationId: string,
+  revisionMessageId: string,
+  revisionInstruction: string,
+  expectedBrandVersion: number,
+  state: PublicationView,
+) {
+  const proposals = state.preferenceProposals ?? [];
+  if (state.status !== "ready" || state.creation?.status !== "ready") return;
+  const durable = proposals.filter((proposal) => proposal.scope === "durable" && proposal.messageId === revisionMessageId && proposal.evidence === revisionInstruction);
+  const duplicateFields = new Set(durable.filter((proposal, index) => durable.some((other, otherIndex) => otherIndex !== index && other.field === proposal.field)).map((proposal) => proposal.field));
+  const eligible = durable.filter((proposal) => {
+    const evidence = state.messages.find((message) => message.id === proposal.messageId && message.role === "user");
+    return !duplicateFields.has(proposal.field) && evidence?.text === revisionInstruction;
+  });
+  if (!eligible.length) return;
+
+  let brand = await readBrand(ownerId, client);
+  if (brand.version !== expectedBrandVersion) return;
+  const saved = [];
+  const viewer = { id: ownerId, name: "", email: "" };
+  for (const proposal of eligible) {
+    const commandKey = `auto-preference:${operationId}:${proposal.id}`;
+    if (brand.rules[proposal.field] === proposal.value) {
+      state.preferenceProposals = state.preferenceProposals?.filter((item) => item.id !== proposal.id);
+      continue;
+    }
+    brand = await updateBrandRuleInTransaction(client, viewer, {
+      field: proposal.field,
+      value: proposal.value,
+      version: brand.version,
+      commandKey,
+    });
+    const event = (await client.query<{ id: string }>("SELECT id FROM brand_event WHERE owner_id=$1 AND command_key=$2", [ownerId, commandKey])).rows[0];
+    requireCondition(event, "preference_save_failed", "The durable preference could not be recorded with its history.", 500);
+    saved.push({ proposalId: proposal.id, eventId: event.id, field: proposal.field, value: proposal.value, evidence: proposal.evidence });
+    state.preferenceProposals = state.preferenceProposals?.filter((item) => item.id !== proposal.id);
+  }
+  if (saved.length) state.autoSavedPreferences = [...(state.autoSavedPreferences ?? []), ...saved];
+}
 
 export async function confirmPreference(viewer: Viewer, publicationId: string, input: { proposalId: string; scope: "durable" | "local"; version: number; brandVersion: number; commandKey: string }) {
   return transaction(async (client) => {

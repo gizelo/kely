@@ -7,4 +7,11 @@ export interface PreferenceProposal {
   evidence: string;
   reason: string;
 }
+export interface AutoSavedPreference {
+  proposalId: string;
+  eventId: string;
+  field: PreferenceProposal["field"];
+  value: string;
+  evidence: string;
+}
 export interface LocalPreferences { audience?: string; voice?: string; headlines?: "default" | "shorter" }

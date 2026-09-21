@@ -1,8 +1,5 @@
-import { KelyApp } from "../components/kely-app";
-import { config } from "../server/config";
-
-export const dynamic = "force-dynamic";
+import { PublicLanding } from "../components/marketing";
 
 export default function Page() {
-  return <KelyApp inviteOnly={!config.openSignup} />;
+  return <PublicLanding />;
 }

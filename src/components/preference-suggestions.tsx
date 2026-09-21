@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BrandView } from "../shared/brand";
 import type { PublicationView } from "../shared/contracts";
 import type { BrandData } from "./brand-data";
+import { request } from "./api";
 
 export interface PreferenceConfirmation {
   proposalId: string;
@@ -39,8 +40,9 @@ export function PreferenceSuggestions({
   const locals = Object.entries(p.localPreferences ?? {}).filter(([, value]) =>
     Boolean(value),
   );
+  const automatic = p.autoSavedPreferences ?? [];
   const completed = p.creation?.status === "ready" || p.outlineApproved || Boolean(p.preparation?.closed);
-  if (!proposals.length && !locals.length) return null;
+  if (!proposals.length && !locals.length && !automatic.length) return null;
 
   function confirm(proposalId: string, scope: "durable" | "local") {
     if (!data.brand || disabled) return;
@@ -58,11 +60,29 @@ export function PreferenceSuggestions({
     );
   }
 
+  function undo(eventId: string) {
+    if (disabled) return;
+    const input = { eventId };
+    void data.change(() => request<BrandView>("/api/kely/brand/undo", {
+      ...input,
+      commandKey: data.commandKey("undo:auto-preference", input),
+    }));
+  }
+
   return (
     <section
       className="preference-suggestions"
       aria-label="Preferences from your feedback"
     >
+      {automatic.map((preference) => {
+        const undone = data.brand?.events.some((event) => event.undoOf === preference.eventId);
+        return <article className="preference-suggestion" key={preference.eventId} role="status">
+          <span className="small-label">KELY · BRAND MEMORY</span>
+          <h3>{undone ? "Preference removed" : "I’ll remember this for future posts."}</h3>
+          <blockquote dir="auto">{preference.evidence}</blockquote>
+          {!undone && <button type="button" className="text-button" disabled={disabled || !data.brand} onClick={() => undo(preference.eventId)}>Undo</button>}
+        </article>;
+      })}
       {proposals.map((proposal) => (
         <article className="preference-suggestion" key={proposal.id}>
           <span className="small-label">KELY · A PREFERENCE TO CONFIRM</span>

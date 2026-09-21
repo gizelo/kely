@@ -5,6 +5,8 @@ import {
   Check,
   Lightbulb,
   Info,
+  Mail,
+  Sparkles,
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { AccountView, Cadence, Platform } from "../shared/contracts";
@@ -258,6 +260,93 @@ export function Landing({
   );
 }
 
+export function PublicLanding() {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  async function joinWaitlist(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!email.trim() || status === "sending") return;
+    setStatus("sending");
+    setMessage("");
+    try {
+      const response = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), consent: true, source: "landing" }),
+      });
+      const value = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(value?.error?.message ?? "We couldn’t save your email. Try again.");
+      setStatus("done");
+      setMessage("You’re on the list. We’ll only email you about Kely access.");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "We couldn’t save your email. Try again.");
+    }
+  }
+
+  return <div className="public-landing">
+    <a className="skip-link" href="#main-content">Skip to content</a>
+    <header className="public-header">
+      <KelyLogo />
+      <a className="button secondary" href="#waitlist">Join the waitlist</a>
+    </header>
+    <main id="main-content" tabIndex={-1}>
+      <section className="public-hero">
+        <div className="public-hero-copy">
+          <span className="public-kicker"><Sparkles size={16} aria-hidden="true" />Your AI designer</span>
+          <h1>On-brand social posts, <em>without the design work.</em></h1>
+          <p>Tell Kely what you want to say. Kely shapes the plan with you, learns your style, and turns it into a finished LinkedIn or Instagram post.</p>
+          <a className="button primary public-cta" href="#waitlist">Join the private beta<ArrowRight size={18} aria-hidden="true" /></a>
+          <span className="public-note">No editor to learn · You approve the plan first</span>
+        </div>
+        <div className="public-hero-art" aria-label="Concept example of a Kely design conversation and finished social post">
+          <div className="public-chat-card">
+            <span>Kely</span>
+            <p>I suggest a 3-slide launch post: a bold promise, one clear product proof, and a simple next step.</p>
+            <strong>Plan approved</strong>
+          </div>
+          <figure>
+            <img src="/examples/girex-product.png" alt="Concept example: dark product carousel cover with a bold headline and product interface" />
+            <figcaption>Concept example</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section className="public-proof" aria-labelledby="proof-title">
+        <span className="section-eyebrow">HOW KELY WORKS</span>
+        <h2 id="proof-title">Like working with a designer.<br /><em>Only much faster.</em></h2>
+        <div className="public-steps">
+          <article><span>01</span><h3>Bring an idea</h3><p>Start with one sentence. Kely asks only what is needed.</p></article>
+          <article><span>02</span><h3>Approve the plan</h3><p>See the copy, slides, caption, and visual direction before generation.</p></article>
+          <article><span>03</span><h3>Refine in words</h3><p>Ask for a focused change. Kely remembers lasting preferences for next time.</p></article>
+        </div>
+      </section>
+
+      <section className="public-examples" aria-labelledby="examples-title">
+        <header><span className="section-eyebrow">CONCEPT EXAMPLES</span><h2 id="examples-title">One system. <em>Your visual language.</em></h2><p>Early concept work illustrating the range Kely is being built for.</p></header>
+        <div className="public-example-grid">
+          <figure><img src="/examples/girex-product.png" alt="Dark product launch carousel concept" /><figcaption>Product launch · LinkedIn</figcaption></figure>
+          <figure><img src="/examples/bakery-neighborhood.png" alt="Warm neighborhood bakery social post concept" /><figcaption>Local business · Instagram</figcaption></figure>
+          <figure><img src="/examples/bakery-opening.png" alt="Bold bakery opening announcement concept" /><figcaption>Announcement · Instagram</figcaption></figure>
+        </div>
+      </section>
+
+      <section id="waitlist" className="waitlist-panel" aria-labelledby="waitlist-title">
+        <div><span className="section-eyebrow">PRIVATE BETA</span><h2 id="waitlist-title">Bring your next post idea.</h2><p>Join the waitlist for early access. We’ll invite a small group while we refine the quality.</p></div>
+        {status === "done" ? <div className="waitlist-success" role="status"><span aria-hidden="true">✓</span><p>{message}</p></div> : <form onSubmit={joinWaitlist}>
+          <label htmlFor="waitlist-email">Work email</label>
+          <div className="waitlist-input"><Mail size={19} aria-hidden="true" /><input id="waitlist-email" type="email" inputMode="email" autoComplete="email" maxLength={254} placeholder="you@company.com" value={email} onChange={event => setEmail(event.target.value)} required aria-describedby="waitlist-consent waitlist-status" /><button className="button primary" disabled={status === "sending"}>{status === "sending" ? "Joining…" : "Join the waitlist"}<ArrowRight size={17} aria-hidden="true" /></button></div>
+          <p id="waitlist-consent" className="field-hint">By joining, you agree to receive emails about Kely access. No spam.</p>
+          {message && <p id="waitlist-status" role="alert" className="waitlist-error">{message}</p>}
+        </form>}
+      </section>
+    </main>
+    <footer className="public-footer"><KelyLogo small /><span>AI design help for small businesses.</span><a href="/beta-info">Privacy</a></footer>
+  </div>;
+}
+
 export function AuthScreen({
   inviteOnly = false,
   mode,
@@ -287,7 +376,7 @@ export function AuthScreen({
       <header className="site-header">
         <Brand onClick={onBack} />
         <button className="text-button" onClick={onBack}>
-          Back to your idea
+          Back to Kely
         </button>
       </header>
       <main id="main-content" className="auth-layout" tabIndex={-1}>
@@ -348,7 +437,7 @@ export function AuthScreen({
               <ArrowRight size={17} aria-hidden="true" />
             </button>
           </form>
-          {inviteOnly ? <p className="auth-switch">Access is by invitation. Use the invitation link you received to create your account.</p> : <p className="auth-switch">
+          {inviteOnly ? <p className="auth-switch">Private beta access only. Sign in with the account provided to you.</p> : <p className="auth-switch">
             {mode === "signup" ? "Already have an account?" : "New to Kely?"}{" "}
             <button
               className="text-button"
