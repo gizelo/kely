@@ -175,7 +175,13 @@ export async function handleApi(request: Request, path: string[]) {
   } catch (error) {
     if (error instanceof ZodError) return Response.json({ error: { code: "invalid_input", message: "Check the required fields and their allowed lengths." } }, { status: 400 });
     if (error instanceof AppError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
-    console.error("Kely request failed; no credentials or request bodies are logged.");
+    const diagnostic = error && typeof error === "object" ? {
+      name: error instanceof Error ? error.name : "UnknownError",
+      ...("code" in error && typeof error.code === "string" && /^[0-9A-Z]{5}$/u.test(error.code) ? { code: error.code } : {}),
+      ...("constraint" in error && typeof error.constraint === "string" && /^[a-z0-9_]{1,120}$/u.test(error.constraint) ? { constraint: error.constraint } : {}),
+      ...("table" in error && typeof error.table === "string" && /^[a-z0-9_]{1,120}$/u.test(error.table) ? { table: error.table } : {}),
+    } : { name: "UnknownError" };
+    console.error("Kely request failed; no credentials or request bodies are logged.", diagnostic);
     return Response.json({ error: { code: "server_error", message: "The local service could not complete this request. Your saved work is preserved." } }, { status: 500 });
   }
 }
