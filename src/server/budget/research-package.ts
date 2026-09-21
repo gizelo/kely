@@ -82,7 +82,8 @@ export async function closeResearchPackageFromDurableEvidence(database: QueryCli
     [ownerId, runId],
   )).rows[0];
   requireCondition(row && row.input_hash === researchInputHash, "research_package_evidence_invalid", "The durable research input does not match its reservation.", 409);
-  requireCondition(materialIds.length === 0 || (Array.isArray(row.material_ids) && row.material_ids.length === materialIds.length && materialIds.every((id) => row.material_ids.includes(id))), "research_package_evidence_invalid", "Durable material analysis does not match the reserved research package.", 409);
+  const materialEvidenceComplete = materialIds.length === 0 || (Array.isArray(row.material_ids) && row.material_ids.length === materialIds.length && materialIds.every((id) => row.material_ids.includes(id)));
+  requireCondition(row.status === "failed" || materialEvidenceComplete, "research_package_evidence_invalid", "Durable material analysis does not match the reserved research package.", 409);
   const completed = row.status === "review_ready" && row.snapshot_id && row.snapshot_hash;
   const hasDurableWork = Boolean(row.snapshot_id && row.snapshot_hash) || (Array.isArray(row.source_hashes) && row.source_hashes.length > 0);
   const released = row.status === "failed" || ((row.status === "needs_input" || row.status === "partial") && hasDurableWork);

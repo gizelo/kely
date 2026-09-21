@@ -3,6 +3,7 @@ import { config, generationMode } from "../src/server/config";
 import { CloudBudgetStore } from "../src/server/budget/cloud-store";
 import { pool } from "../src/server/db";
 import { assertSchemaReady } from "./lib/schema-ready";
+import { reconcileInterruptedResearchRuns } from "../src/server/research-recovery";
 
 const children: ChildProcess[] = [];
 let stopping = false;
@@ -25,6 +26,7 @@ async function main() {
     startupStage = "budget readiness";
     const budget = new CloudBudgetStore(pool, process.env.KELY_BUDGET_DESTINATION ?? "");
     await budget.reconcileInterruptedDispatch();
+    await reconcileInterruptedResearchRuns(pool, budget);
     console.log("Kely cloud budget is ready.");
   }
   startupStage = "process launch";
