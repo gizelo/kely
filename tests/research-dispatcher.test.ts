@@ -51,6 +51,17 @@ test("dispatcher accepts an explicitly supplied canonical URL when search cites 
   assert.equal(result.candidates[0].signals.userSuppliedUrl, true);
 });
 
+test("dispatcher accepts a canonical root only when search returned the same host", async () => {
+  const output = { kind: "entity_discovery", candidates: [{ id: "girex-pos", displayName: "Girex POS", canonicalUrl: "https://girex.id/", citations: [{ url: "https://girex.id/login", excerpt: "Girex POS login page." }] }] };
+  const searchResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.id/login" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
+  const result = await dispatchEntitySearch({ async dispatch() { return { response: searchResponse, assessment: {}, replayed: false }; } }, reservedInput);
+  assert.equal(result.candidates[0].canonicalUrl, "https://girex.id/");
+
+  const foreign = { ...output, candidates: [{ ...output.candidates[0], canonicalUrl: "https://invented.example/" }] };
+  const foreignResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.id/login" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(foreign) }] }] });
+  await assert.rejects(dispatchEntitySearch({ async dispatch() { return { response: foreignResponse, assessment: {}, replayed: false }; } }, reservedInput), /research_candidate_url_not_returned_by_search/u);
+});
+
 test("unreturned citations and model-controlled official signals fail closed", async () => {
   const parsed = { kind: "entity_discovery", candidates: [{ id: "girex", displayName: "Girex", canonicalUrl: "https://girex.io", citations: [{ url: "https://invented.example", excerpt: "Invented citation" }] }] };
   const untrusted = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.io" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(parsed) }] }] });

@@ -114,6 +114,7 @@ export async function dispatchEntitySearch(gateway: Gateway, input: EntitySearch
   const dispatched = await gateway.dispatch(entitySearchAttempt(input));
   const parsed = responseParts(dispatched.response);
   const userSuppliedUrls = new Set(input.userSuppliedUrls.map(canonicalEvidenceUrl));
+  const returnedHosts = new Set([...parsed.sourceUrls].map((url) => new URL(url).hostname));
   const evidence: BrandEvidenceRecord[] = [];
   const candidates = parsed.output.candidates.map((candidate) => {
     const canonicalUrl = canonicalEvidenceUrl(candidate.canonicalUrl);
@@ -125,7 +126,7 @@ export async function dispatchEntitySearch(gateway: Gateway, input: EntitySearch
       return id;
     });
     const userSuppliedUrl = userSuppliedUrls.has(canonicalUrl);
-    if (!parsed.sourceUrls.has(canonicalUrl) && !userSuppliedUrl) throw new Error("research_candidate_url_not_returned_by_search");
+    if (!returnedHosts.has(new URL(canonicalUrl).hostname) && !userSuppliedUrl) throw new Error("research_candidate_url_not_returned_by_search");
     return { id: candidate.id, displayName: candidate.displayName, canonicalUrl, evidenceIds, signals: { userSuppliedUrl, officialSiteClaim: false, exactNameMatch: normalized(candidate.displayName) === normalized(input.businessName), crossLinkedProfile: false } } satisfies EntityCandidate;
   });
   if (new Set(candidates.map((item) => item.id)).size !== candidates.length) throw new Error("research_candidate_duplicate");
