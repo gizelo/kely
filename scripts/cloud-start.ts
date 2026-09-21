@@ -20,13 +20,16 @@ async function main() {
   if (!config.cloud) throw new Error("The hosted launcher requires cloud configuration.");
   startupStage = "schema readiness";
   await assertSchemaReady(pool);
+  console.log("Kely cloud schema is ready.");
   if (generationMode() === "openai") {
     startupStage = "budget readiness";
     const budget = new CloudBudgetStore(pool, process.env.KELY_BUDGET_DESTINATION ?? "");
     await budget.inspect();
+    console.log("Kely cloud budget is ready.");
   }
   startupStage = "process launch";
   await pool.end();
+  console.log("Kely cloud startup checks are complete.");
   const port = Number(process.env.PORT ?? 10000);
   if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid web port.");
   const commands = [
