@@ -236,6 +236,11 @@
 .creation-intake > .button.primary { display: flex; margin: 16px 0 0 auto; }
 .creation-intake > .field-hint { margin: 14px 0 20px; font-size: 13px; }
 .creation-intake > details:not(.creation-upload-list) { border-top: 1px solid var(--line); padding-top: 12px; font-size: 14px; }
+.creation-brief-details { margin-top: 18px; }
+.creation-brief-details summary { cursor: pointer; font-weight: 650; }
+.creation-brief-grid { display: grid; gap: 10px; margin-top: 16px; }
+.creation-brief-grid label { margin-top: 6px; font-size: 14px; font-weight: 600; }
+.creation-brief-grid input, .creation-brief-grid textarea { width: 100%; padding: 13px 14px; border: 1px solid #aaa6b0; border-radius: 14px; background: white; font: inherit; line-height: 1.45; }
 .creation-source-options { display: grid; gap: 10px; margin: 18px 0; }
 .creation-source-options > button {
   display: flex;
@@ -307,6 +312,7 @@
 .creation-plan header > p { color: var(--muted); }
 .creation-plan-slides { list-style: none; display: grid; gap: 12px; padding: 0; margin: 24px 0; }
 .creation-plan-slides > li { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: var(--paper); }
+.creation-plan-slides .plan-visual { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .creation-plan > section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 20px; }
 .creation-plan-layout > .creation-chat { position: sticky; top: 24px; }
 .beta-usage { max-width: 680px; margin: 0 auto; }

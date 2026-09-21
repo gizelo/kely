@@ -23,6 +23,9 @@ function SavedCreationIntake({ draft, ownerId, busy, run, onError, onBack, onCon
   const [source, setSource] = useState<"materials" | "link" | "decide" | null>(null);
   const [url, setUrl] = useState("");
   const [context, setContext] = useState("");
+  const [audience, setAudience] = useState("");
+  const [outcome, setOutcome] = useState("");
+  const [constraints, setConstraints] = useState("");
   const [role, setRole] = useState<"original" | "reference">("reference");
   const [note, setNote] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -38,6 +41,9 @@ function SavedCreationIntake({ draft, ownerId, busy, run, onError, onBack, onCon
         if (["materials", "link", "decide"].includes(saved.source)) setSource(saved.source);
         if (typeof saved.url === "string") setUrl(saved.url.slice(0, 2048));
         if (typeof saved.context === "string") setContext(saved.context.slice(0, 1800));
+        if (typeof saved.audience === "string") setAudience(saved.audience.slice(0, 500));
+        if (typeof saved.outcome === "string") setOutcome(saved.outcome.slice(0, 500));
+        if (typeof saved.constraints === "string") setConstraints(saved.constraints.slice(0, 800));
         if (saved.role === "original" || saved.role === "reference") setRole(saved.role);
         if (Array.isArray(saved.selected)) setSelected([...new Set<string>(saved.selected.filter((id: unknown) => typeof id === "string" && /^[a-f\d-]{36}$/i.test(id)))].slice(0, 3));
       }
@@ -56,8 +62,8 @@ function SavedCreationIntake({ draft, ownerId, busy, run, onError, onBack, onCon
 
   useEffect(() => {
     if (!restored) return;
-    try { sessionStorage.setItem(storageKey, JSON.stringify({ source, url, context, role, selected })); } catch {}
-  }, [restored, storageKey, source, url, context, role, selected]);
+    try { sessionStorage.setItem(storageKey, JSON.stringify({ source, url, context, audience, outcome, constraints, role, selected })); } catch {}
+  }, [restored, storageKey, source, url, context, audience, outcome, constraints, role, selected]);
 
   async function upload(file: File) {
     if (!data.brand) return;
@@ -91,23 +97,37 @@ function SavedCreationIntake({ draft, ownerId, busy, run, onError, onBack, onCon
   return <section className="creation-intake">
     <button className="text-button" onClick={onBack} disabled={busy}><ArrowLeft size={16} />Your idea</button>
     <h1>Let’s make it yours.</h1>
-    <p className="section-description">Have a style in mind? Bring it along, or leave it to Kely.</p>
+    <p className="section-description">Give Kely what you have. She’ll ask only for anything essential that’s missing.</p>
     <div className="creation-source-options" role="group" aria-label="Brand starting point">
       {([{ id: "materials", label: "Add materials", icon: ImagePlus }, { id: "link", label: "Paste a link", icon: Link2 }, { id: "decide", label: "Let Kely decide", icon: Sparkles }] as const).map(item => <button key={item.id} type="button" className={source === item.id ? "selected" : ""} aria-pressed={source === item.id} disabled={busy} onClick={() => setSource(item.id)}><item.icon size={22} /><span>{item.label}</span></button>)}
     </div>
     {source === "materials" && <div className="creation-source-form">
-      <label htmlFor="creation-material-role">These images are</label>
-      <select id="creation-material-role" value={role} onChange={event => setRole(event.target.value as typeof role)} disabled={busy}><option value="reference">Style references</option><option value="original">My reusable brand assets</option></select>
+      <label htmlFor="creation-material-role">How should Kely use these?</label>
+      <select id="creation-material-role" value={role} onChange={event => setRole(event.target.value as typeof role)} disabled={busy}><option value="reference">Learn the visual style</option><option value="original">Place the actual image in the post</option></select>
       <label className="button secondary" htmlFor="creation-upload"><ImagePlus size={18} />Choose an image</label>
       <input ref={input} id="creation-upload" className="sr-only" type="file" accept="image/png,image/jpeg" disabled={busy || data.loading} onChange={event => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
-      <p className="field-hint">PNG or JPEG, up to 5 MB. Only upload images you’re allowed to use.</p>
+      <p className="field-hint">Upload logos, product screenshots or photos as actual images. Upload past posts as style references.</p>
     </div>}
     {source === "link" && <form onSubmit={event => void importLink(event)} className="creation-source-form"><label htmlFor="creation-link">Website or social post</label><input id="creation-link" type="url" value={url} onChange={event => setUrl(event.target.value)} placeholder="https://…" required disabled={busy} /><button className="button secondary" disabled={busy || data.loading || !url.trim()}>Add reference</button></form>}
     {note && <p role="status">{note}</p>}
     {images.length > 0 && <details className="creation-upload-list" open={selected.length > 0}><summary>{selected.length ? `${selected.length} references selected` : "Use saved brand images"}</summary><p className="field-hint">Choose up to three images to guide this post.</p><div>{images.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} disabled={busy || (!selected.includes(item.id) && selected.length >= 3)} onChange={event => setSelected(ids => event.target.checked ? [...ids, item.id] : ids.filter(id => id !== item.id))} /><img src={"/api/kely/brand-materials/" + item.id} alt={item.label} width={64} height={64} /><span>{item.label}</span></label>)}</div></details>}
-    <label htmlFor="creation-preferences">Anything Kely should know? <span className="field-hint">Optional</span></label>
-    <textarea id="creation-preferences" rows={3} maxLength={1800} value={context} onChange={event => setContext(event.target.value)} placeholder="Your business, the mood, something to include…" disabled={busy} />
-    <button className="button primary" disabled={busy || data.loading || !data.brand || !restored} onClick={() => onContinue(selected.filter(id => images.some(item => item.id === id)), context)}>{busy ? "One moment…" : "Let’s plan"}<ArrowRight size={18} /></button>
+    <details className="creation-brief-details">
+      <summary>Add useful details <span className="field-hint">Optional</span></summary>
+      <div className="creation-brief-grid">
+        <label htmlFor="creation-audience">Who is this for?</label>
+        <input id="creation-audience" maxLength={500} value={audience} onChange={event => setAudience(event.target.value)} placeholder="You decide, or describe the audience" disabled={busy} />
+        <label htmlFor="creation-outcome">What should they do or understand?</label>
+        <input id="creation-outcome" maxLength={500} value={outcome} onChange={event => setOutcome(event.target.value)} placeholder="Learn more, book, message us…" disabled={busy} />
+        <label htmlFor="creation-constraints">What must be included or avoided?</label>
+        <textarea id="creation-constraints" rows={3} maxLength={800} value={constraints} onChange={event => setConstraints(event.target.value)} placeholder="Exact facts, offer terms, CTA, visual dislikes…" disabled={busy} />
+        <label htmlFor="creation-preferences">Anything else?</label>
+        <textarea id="creation-preferences" rows={3} maxLength={1800} value={context} onChange={event => setContext(event.target.value)} placeholder="Tone, mood, context or leave it to Kely" disabled={busy} />
+      </div>
+    </details>
+    <button className="button primary" disabled={busy || data.loading || !data.brand || !restored} onClick={() => {
+      const brief = [audience.trim() && `Audience: ${audience.trim()}`, outcome.trim() && `Desired outcome: ${outcome.trim()}`, constraints.trim() && `Must include or avoid: ${constraints.trim()}`, context.trim() && `Additional context: ${context.trim()}`].filter(Boolean).join("\n");
+      onContinue(selected.filter(id => images.some(item => item.id === id)), brief);
+    }}>{busy ? "One moment…" : "Let’s plan"}<ArrowRight size={18} /></button>
     <p className="field-hint">Your brand stays saved. You can change it any time.</p>
     <details><summary>Your post idea</summary><p dir="auto">{draft.idea}</p></details>
   </section>;
@@ -176,7 +196,10 @@ export function CreationWorkspace({ publication: p, busy, quote, onAccept, onGen
     {(ready || planReady || state?.status === "needs_input") && <div className={ready ? "creation-result" : planReady ? "creation-plan-layout" : "creation-intake"}>
       {planReady && <article className="creation-plan" aria-labelledby="creation-plan-title">
         <header><span className="eyebrow">YOUR POST PLAN</span><h1 id="creation-plan-title">Here’s what I suggest.</h1><p>{p.platform === "instagram" ? "Instagram" : "LinkedIn"} · {p.slideCount === 1 ? "Single image" : `${p.slideCount}-slide carousel`}</p></header>
-        <ol className="creation-plan-slides">{p.slides.map((slide, index) => <li key={slide.id}><span className="field-hint">{p.slideCount === 1 ? "Post text" : `Slide ${index + 1}`}</span><h2 dir="auto">{slide.title}</h2><p dir="auto">{slide.body}</p></li>)}</ol>
+        <ol className="creation-plan-slides">{p.slides.map((slide, index) => {
+          const material = slide.creativePlan?.materialId ? brandData.brand?.materials.find(item => item.id === slide.creativePlan?.materialId) : null;
+          return <li key={slide.id}><span className="field-hint">{p.slideCount === 1 ? "Post text" : `Slide ${index + 1}`}</span><h2 dir="auto">{slide.title}</h2><p dir="auto">{slide.body}</p>{slide.creativePlan && <p className="plan-visual"><strong>Visual:</strong> {material ? `Use “${material.label}”` : "Typography-led composition"} · {slide.creativePlan.purpose}</p>}</li>;
+        })}</ol>
         <section><h2>Caption</h2><p dir="auto">{p.caption}</p></section>
         <section><h2>Visual direction</h2><p dir="auto">{state.plan?.visualDirection}</p></section>
       </article>}

@@ -9,9 +9,27 @@ import type { AnalysisInput } from "./providers/analysis";
 import { semanticDirectionEligibility } from "./semantic-direction";
 import { semanticTones, visualGrammars } from "../shared/semantic-direction";
 import { requireCondition } from "./errors";
+import { freezeArtDirection } from "./art-direction";
 
 export const CREATION_CREDITS = 30;
 export const CREATION_REVISION_CREDITS = 11;
+
+export function applySelectedOriginals(brand: FrozenBrand, materialIds: string[]): FrozenBrand {
+  if (!brand.art) return structuredClone(brand);
+  const selected = materialIds.map(id => brand.materials.find(item => item.id === id)).filter((item): item is NonNullable<typeof item> => item?.kind === "image" && item.role === "original");
+  if (!selected.length) return structuredClone(brand);
+  const logo = selected.find(item => /(?:^|[\s._-])logo(?:[\s._-]|$)/iu.test(item.label));
+  const heroes = brand.brief.noPhoto ? [] : selected.filter(item => item.id !== logo?.id).slice(0, 2);
+  const next = structuredClone(brand);
+  next.art = freezeArtDirection({ ...brand.art.direction, logoMaterialId: logo?.id ?? brand.art.direction.logoMaterialId, heroMaterialIds: heroes.length ? heroes.map(item => item.id) : brand.art.direction.heroMaterialIds, composition: heroes.length ? "image-led" : brand.art.direction.composition }, brand.materials, brand.brief.noPhoto);
+  const { hash: _hash, ...value } = next;
+  next.hash = inputHash(value);
+  return next;
+}
+
+export function shouldGenerateEditorialArtwork(input: Pick<CreationInput, "revision" | "analysis">, state: PublicationView) {
+  return !input.revision && !state.artwork && !state.artDirection?.direction.heroMaterialIds.length && !state.brandBrief?.noPhoto && !input.analysis?.selected.length;
+}
 export interface CreationInput {
   schemaVersion: 13 | 14 | 15;
   policy: "unified-creation-v1" | "unified-creation-v2" | "plan-first-v1";

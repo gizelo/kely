@@ -10,7 +10,7 @@ import { requireCondition } from "./errors";
 import { generationMode } from "./config";
 import { inputHash, snapshotPaidInput } from "./paid-input";
 import { enqueueOperation } from "./queue";
-import { CREATION_CREDITS, CREATION_REVISION_CREDITS, creationAnalysis, creationPlanHash, suggestedSlideCount, verifyCreationInput, type CreationInput } from "./creation-input";
+import { CREATION_CREDITS, CREATION_REVISION_CREDITS, applySelectedOriginals, creationAnalysis, creationPlanHash, suggestedSlideCount, verifyCreationInput, type CreationInput } from "./creation-input";
 import { interpretRevision } from "./revision-scope";
 
 export interface QuoteCreationInput { idea: string; context?: string; platform: Platform; slideCount?: number; language?: string; sourceAnalysisId?: string; analysisMaterialIds?: string[] }
@@ -29,12 +29,13 @@ export async function quoteCreation(viewer: Viewer, input: QuoteCreationInput) {
     state.fixture = mode !== "openai";
     if (!state.brandBrief!.direction) state.brandBrief!.direction = "decide";
     state.messages = state.messages.filter((message) => message.role === "user");
-    const brand = await freezeBrand(viewer.id, state, client);
+    let brand = await freezeBrand(viewer.id, state, client);
     if (input.sourceAnalysisId) {
       const saved = (await client.query("SELECT a.snapshot FROM brand_analysis a JOIN operation o ON o.id=a.operation_id WHERE a.id=$1 AND a.owner_id=$2 AND o.status='completed'", [input.sourceAnalysisId, viewer.id])).rows[0];
       requireCondition(saved?.snapshot?.policy === "brand-analysis-v2" && saved.snapshot.input.selected.every((selected: { id: string; version: number; originalHash: string; role: string }) => brand.materials.some((material) => material.id === selected.id && material.version === selected.version && material.contentHash === selected.originalHash && material.role === selected.role)), "analysis_stale", "The saved analysis refers to changed or unavailable images. Choose the current images for included analysis.", 409);
     }
     const ids = input.analysisMaterialIds ?? (input.sourceAnalysisId ? [] : brand.materials.filter((item) => item.kind === "image" && item.role === "reference").slice(0, 3).map((item) => item.id));
+    brand = applySelectedOriginals(brand, ids);
     const analysis = await creationAnalysis(viewer.id, ids, brand, `${input.idea}${input.context ? `\n${input.context}` : ""}`);
     const quote: CreationQuoteView = { id: randomUUID(), publicationId: state.id, credits: CREATION_CREDITS, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), summary: `Create the complete ${slideCount === 1 ? "post" : `${slideCount}-slide carousel`}, including necessary clarification${analysis ? `, analysis of ${ids.length} selected images (${analysis.selected.map((item) => item.label).join(", ")}; only these images are analyzed)` : ""}, design, caption and downloads. No separate stage charges.`, format: { platform: input.platform, slideCount, basis: input.slideCount ? "chosen" : "suggested" } };
     state.creation = { status: "quoted", phase: "context", credits: CREATION_CREDITS, questions: [], canReply: false, quote };
