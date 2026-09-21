@@ -52,6 +52,12 @@ test("durable research is idempotent, owner-scoped, append-only and retains part
     await assert.rejects(pool.query("UPDATE brand_research_snapshot SET snapshot='{}' WHERE id=$1", [accepted.id]), /append-only/);
     await assert.rejects(pool.query("DELETE FROM brand_research_source WHERE id=$1", [evidence.id]), /append-only/);
 
+    const ambiguous = await store.start(ownerId, { businessName: "Ambiguous" }, `ambiguous-${randomUUID()}`);
+    await store.appendStatus(ownerId, ambiguous.id, "resolving");
+    await store.appendStatus(ownerId, ambiguous.id, "fetching");
+    await store.appendStatus(ownerId, ambiguous.id, "extracting");
+    assert.equal((await store.appendStatus(ownerId, ambiguous.id, "needs_input", { question: "business_identity" })).status, "needs_input");
+
     const correction = await store.start(ownerId, { businessName: "Example corrected" }, `correction-${randomUUID()}`, created.id);
     assert.equal(correction.supersedesRunId, created.id);
     assert.equal((await store.appendStatus(ownerId, correction.id, "failed", { reason: "Bounded extraction failed" })).status, "failed");

@@ -33,10 +33,14 @@ function hashJson(value: unknown) {
 
 const TRANSITIONS: Record<ResearchStatus, ReadonlySet<ResearchStatus>> = {
   queued: new Set(["resolving", "failed"]), resolving: new Set(["fetching", "needs_input", "partial", "failed", "uncertain"]),
-  fetching: new Set(["extracting", "partial", "failed", "uncertain"]), extracting: new Set(["strategizing", "partial", "failed", "uncertain"]),
+  fetching: new Set(["extracting", "partial", "failed", "uncertain"]), extracting: new Set(["strategizing", "needs_input", "partial", "failed", "uncertain"]),
   strategizing: new Set(["checking", "needs_input", "partial", "failed", "uncertain"]), checking: new Set(["review_ready", "needs_input", "partial", "failed", "uncertain"]),
   review_ready: new Set(), needs_input: new Set(["strategizing", "failed"]), partial: new Set(["strategizing", "checking", "review_ready", "failed"]), failed: new Set(), uncertain: new Set(),
 };
+
+export function researchStatusCanTransition(from: ResearchStatus, to: ResearchStatus) {
+  return TRANSITIONS[from].has(to);
+}
 
 async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
@@ -83,7 +87,7 @@ export class BrandIntelligenceStore {
     await inTransaction(this.pool, async (client) => {
       requireCondition((await client.query("SELECT 1 FROM brand_research_run WHERE owner_id=$1 AND id=$2", [ownerId, runId])).rowCount, "research_not_found", "Research run not found.", 404);
       const current = (await client.query("SELECT status FROM brand_research_event WHERE owner_id=$1 AND run_id=$2 ORDER BY sequence DESC LIMIT 1 FOR UPDATE", [ownerId, runId])).rows[0]?.status as ResearchStatus | undefined;
-      requireCondition(current && TRANSITIONS[current].has(status), "research_transition_invalid", `Research cannot move from ${current ?? "unknown"} to ${status}.`, 409);
+      requireCondition(current && researchStatusCanTransition(current, status), "research_transition_invalid", `Research cannot move from ${current ?? "unknown"} to ${status}.`, 409);
       await client.query("INSERT INTO brand_research_event(id,owner_id,run_id,status,detail) VALUES($1,$2,$3,$4,$5)", [randomUUID(), ownerId, runId, status, serialized]);
     });
     return this.read(ownerId, runId);

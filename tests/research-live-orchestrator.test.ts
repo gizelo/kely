@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { researchPackageInput } from "../src/server/budget/research-package";
 import type { BrandEvidenceRecord, BrandIntelligenceSnapshot } from "../src/shared/brand-intelligence";
 import type { ResearchRunView, ResearchStatus } from "../src/server/brand-intelligence-store";
+import { researchStatusCanTransition } from "../src/server/brand-intelligence-store";
 import { materialObservationContext, materialObservationEvidence, runLiveResearch } from "../src/server/research-live-orchestrator";
 import { analysisRequest, previewAnalysisResponse, type AnalysisInput } from "../src/server/providers/analysis";
 
@@ -12,6 +13,11 @@ const reservation = researchPackageInput("owner", runId, "a".repeat(64));
 function view(): ResearchRunView { return { id: runId, ownerId: "owner", commandKey: "command-1", inputHash: "a".repeat(64), input: {}, supersedesRunId: null, status: "queued", statusDetail: {}, createdAt: new Date().toISOString(), sources: [], snapshots: [] }; }
 function raw(value: unknown) { return { output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] }; }
 const strategy = { kind: "research_strategy", brandProfile: { facts: [], tone: [], palette: [], typography: [], composition: [], allowedMaterials: [], prohibitions: [] }, plan: { platform: "linkedin", format: "single", slideCount: 1, purpose: "Introduce Acme", audience: "Salon owners", angle: "Simple scheduling", slides: [{ index: 1, objective: "Introduce", copy: "Meet Acme", visualDirection: "Clean product-led composition", claimKeys: [], materialIds: [] }], caption: "Meet Acme.", cta: "Learn more", visualSystem: "Clear and restrained" } } as const;
+
+test("extraction can pause for an identity answer without failing the research run", () => {
+  assert.equal(researchStatusCanTransition("extracting", "needs_input"), true);
+  assert.equal(researchStatusCanTransition("extracting", "review_ready"), false);
+});
 
 test("material observations are split to the durable evidence limit with run-scoped stable IDs", () => {
   const content = `${"a".repeat(499)}😀${"b".repeat(500)}`;
