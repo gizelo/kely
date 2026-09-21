@@ -60,6 +60,13 @@ test("extraction preserves provenance and rejects external context as factual su
   assert.throws(() => parseExtractionStageResponse(response(proposedFact), [official]), /proposed_fact_invalid/u);
 });
 
+test("creative proposals cannot upgrade inspiration into supporting evidence", () => {
+  const output = extraction({ claims: [{ key: "art_direction", kind: "creative", value: "Use a bold split composition", provenance: "proposed", confidence: "medium", evidenceIds: [official.id] }] });
+  const parsed = parseExtractionStageResponse(response(output), [official]);
+  assert.deepEqual(parsed.attributions[0].evidenceIds, []);
+  assert.equal(parsed.claims[0].status, "proposed");
+});
+
 test("strategy permits proposed creative direction but only references known facts", () => {
   const parsed = parseStrategyStageResponse(response(strategy()), claims, [official]);
   assert.equal(parsed.plan.slideCount, 2);

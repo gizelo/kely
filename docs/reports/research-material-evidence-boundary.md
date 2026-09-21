@@ -21,3 +21,7 @@ The first post-worker-memory live Girex run completed its paid material analysis
 ## Limitation
 
 The failed live run is immutable and remains failed. A new user-requested run is required after deployment; it must pass the normal shared-budget reservation gate.
+
+## Follow-up extraction boundary
+
+The next live run passed material and source persistence, then returned two creative `proposed` claims with reference IDs. Proposed creative direction is not evidence-backed by definition. The parser now deterministically removes evidence IDs only from creative proposals before attribution validation. Factual, offer, price and regulated claims keep the strict original validation and cannot be normalized this way.

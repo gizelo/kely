@@ -183,7 +183,8 @@ function validateAttribution(item: z.infer<typeof attributedRuleSchema> | z.infe
 }
 
 export function parseExtractionStageResponse(raw: unknown, evidenceRecords: BrandEvidenceRecord[]) {
-  const result = researchExtractionSchema.parse(structuredOutput(raw));
+  const parsed = researchExtractionSchema.parse(structuredOutput(raw));
+  const result = { ...parsed, claims: parsed.claims.map((item) => item.kind === "creative" && item.provenance === "proposed" ? { ...item, evidenceIds: [] } : item) };
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   if (evidence.size !== evidenceRecords.length) throw new Error("research_evidence_duplicate");
   unique(result.claims.map((item) => item.key), "research_claim_duplicate");
