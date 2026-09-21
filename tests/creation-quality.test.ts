@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applySelectedOriginals, shouldGenerateEditorialArtwork, type CreationInput } from "../src/server/creation-input";
+import { applySelectedOriginals, shouldGenerateEditorialArtwork, suggestedSlideCount, type CreationInput } from "../src/server/creation-input";
 import { inputHash } from "../src/server/paid-input";
 import type { FrozenBrand } from "../src/shared/brand";
 import type { PublicationView } from "../src/shared/contracts";
@@ -44,4 +44,10 @@ test("style references suppress generic image generation but a material-free fre
   assert.equal(shouldGenerateEditorialArtwork({ ...base, analysis: { selected: [{ id: ids.reference }] } as CreationInput["analysis"] }, state), false);
   state.artDirection!.direction.heroMaterialIds = [ids.screenshot];
   assert.equal(shouldGenerateEditorialArtwork(base, state), false);
+});
+
+test("the initial plan respects an explicit carousel size in the idea", () => {
+  assert.equal(suggestedSlideCount("Create a 3-slide LinkedIn carousel."), 3);
+  assert.equal(suggestedSlideCount("Сделай четыре слайда о продукте."), 4);
+  assert.equal(suggestedSlideCount("Introduce our product in one post."), 1);
 });

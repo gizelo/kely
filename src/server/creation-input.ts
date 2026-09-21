@@ -46,7 +46,12 @@ export interface CreationInput {
 }
 
 export function suggestedSlideCount(idea: string) {
-  return /(?:\b(?:steps|guide|walkthrough|three|compare|process)\b|шаг|этап|сравн|Schritte|Anleitung)/iu.test(idea) || idea.split(/(?:\n[-*\d]|;)/u).length >= 3 ? 3 : 1;
+  const explicit = /(?<![\p{L}\p{N}])([1-6]|one|two|three|four|five|six|один|одна|два|три|четыре|пять|шесть|ein|eine|zwei|drei|vier|fünf|sechs)\s*[-–]?\s*(?:slides?|слайд[а-я]*|folien?)(?![\p{L}])/iu.exec(idea);
+  if (explicit) {
+    const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, один: 1, одна: 1, два: 2, три: 3, четыре: 4, пять: 5, шесть: 6, ein: 1, eine: 1, zwei: 2, drei: 3, vier: 4, fünf: 5, sechs: 6 };
+    return words[explicit[1].toLowerCase()] ?? Number(explicit[1]);
+  }
+  return /(?:\b(?:steps|guide|walkthrough|compare|process)\b|шаг|этап|сравн|Schritte|Anleitung)/iu.test(idea) || idea.split(/(?:\n[-*\d]|;)/u).length >= 3 ? 3 : 1;
 }
 
 export function verifyCreationInput(value: CreationInput, hash: string) {
