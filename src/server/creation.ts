@@ -10,17 +10,22 @@ import { requireCondition } from "./errors";
 import { generationMode } from "./config";
 import { inputHash, snapshotPaidInput } from "./paid-input";
 import { enqueueOperation } from "./queue";
-import { CREATION_CREDITS, CREATION_REVISION_CREDITS, applySelectedOriginals, creationAnalysis, creationPlanHash, suggestedSlideCount, verifyCreationInput, type CreationInput } from "./creation-input";
+import { CREATION_CREDITS, CREATION_REVISION_CREDITS, applySelectedOriginals, creationAnalysis, creationPlanHash, freezeCreationResearch, suggestedSlideCount, verifyCreationInput, verifyCreationResearch, type CreationInput, type CreationResearchSelection } from "./creation-input";
 import { interpretRevision } from "./revision-scope";
 
-export interface QuoteCreationInput { idea: string; context?: string; platform: Platform; slideCount?: number; language?: string; sourceAnalysisId?: string; analysisMaterialIds?: string[] }
+export interface QuoteCreationInput { idea: string; context?: string; platform: Platform; slideCount?: number; language?: string; sourceAnalysisId?: string; analysisMaterialIds?: string[]; research?: CreationResearchSelection }
 
 export async function quoteCreation(viewer: Viewer, input: QuoteCreationInput) {
   const mode = generationMode();
   requireCondition(mode !== "fixture", "provider_unavailable", "Creation is unavailable in this runtime. Your idea can be kept until the service is ready.", 409);
   requireCondition(!(input.sourceAnalysisId && input.analysisMaterialIds?.length), "analysis_input", "Reuse a saved analysis or choose images for the included analysis, not both.");
-  const slideCount = input.slideCount ?? suggestedSlideCount(input.idea);
-  const draft = await createPublication(viewer, { ...input, slideCount });
+  const prefrozenResearch = input.research ? await freezeCreationResearch(pool, viewer.id, input.research) : undefined;
+  if (prefrozenResearch) {
+    requireCondition(prefrozenResearch.strategy.plan.platform === input.platform, "research_plan_mismatch", "Create the post on the platform reviewed in the research plan.", 409);
+    requireCondition(input.slideCount === undefined || input.slideCount === prefrozenResearch.strategy.plan.slideCount, "research_plan_mismatch", "Create the exact publication size reviewed in the research plan.", 409);
+  }
+  const slideCount = prefrozenResearch?.strategy.plan.slideCount ?? input.slideCount ?? suggestedSlideCount(input.idea);
+  const draft = await createPublication(viewer, { ...input, platform: prefrozenResearch?.strategy.plan.platform ?? input.platform, slideCount });
   return transaction(async (client) => {
     await requireEntitlement(client, await lockWallet(client, viewer.id));
     const state = await readPublication(viewer.id, draft.id, client, true);
@@ -30,18 +35,23 @@ export async function quoteCreation(viewer: Viewer, input: QuoteCreationInput) {
     if (!state.brandBrief!.direction) state.brandBrief!.direction = "decide";
     state.messages = state.messages.filter((message) => message.role === "user");
     let brand = await freezeBrand(viewer.id, state, client);
+    const research = input.research ? await freezeCreationResearch(client, viewer.id, input.research) : undefined;
+    if (prefrozenResearch && research) requireCondition(prefrozenResearch.strategyHash === research.strategyHash && prefrozenResearch.planHash === research.planHash, "research_snapshot_changed", "The reviewed research plan changed while preparing this quote.", 409);
+    if (research) requireCondition(research.brandProfileVersion === brand.version, "research_brand_mismatch", "The Brand Profile changed after this research. Review the current profile before preparing a plan.", 409);
     if (input.sourceAnalysisId) {
       const saved = (await client.query("SELECT a.snapshot FROM brand_analysis a JOIN operation o ON o.id=a.operation_id WHERE a.id=$1 AND a.owner_id=$2 AND o.status='completed'", [input.sourceAnalysisId, viewer.id])).rows[0];
       requireCondition(saved?.snapshot?.policy === "brand-analysis-v2" && saved.snapshot.input.selected.every((selected: { id: string; version: number; originalHash: string; role: string }) => brand.materials.some((material) => material.id === selected.id && material.version === selected.version && material.contentHash === selected.originalHash && material.role === selected.role)), "analysis_stale", "The saved analysis refers to changed or unavailable images. Choose the current images for included analysis.", 409);
     }
     const ids = input.analysisMaterialIds ?? (input.sourceAnalysisId ? [] : brand.materials.filter((item) => item.kind === "image" && item.role === "reference").slice(0, 3).map((item) => item.id));
-    brand = applySelectedOriginals(brand, ids);
+    const plannedMaterialIds = research ? [...new Set(research.strategy.plan.slides.flatMap((slide) => slide.materialIds))] : [];
+    requireCondition(plannedMaterialIds.length <= 2 && plannedMaterialIds.every((id) => brand.materials.some((material) => material.id === id && material.kind === "image" && material.role === "original")), "research_plan_incompatible", "The reviewed plan references originals that are unavailable or unsupported by the current renderer.", 409);
+    brand = applySelectedOriginals(brand, [...new Set([...ids, ...plannedMaterialIds])]);
     const analysis = await creationAnalysis(viewer.id, ids, brand, `${input.idea}${input.context ? `\n${input.context}` : ""}`);
-    const quote: CreationQuoteView = { id: randomUUID(), publicationId: state.id, credits: CREATION_CREDITS, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), summary: `Create the complete ${slideCount === 1 ? "post" : `${slideCount}-slide carousel`}, including necessary clarification${analysis ? `, analysis of ${ids.length} selected images (${analysis.selected.map((item) => item.label).join(", ")}; only these images are analyzed)` : ""}, design, caption and downloads. No separate stage charges.`, format: { platform: input.platform, slideCount, basis: input.slideCount ? "chosen" : "suggested" } };
+    const quote: CreationQuoteView = { id: randomUUID(), publicationId: state.id, credits: CREATION_CREDITS, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), summary: `Create the complete ${slideCount === 1 ? "post" : `${slideCount}-slide carousel`}, including necessary clarification${analysis ? `, analysis of ${ids.length} selected images (${analysis.selected.map((item) => item.label).join(", ")}; only these images are analyzed)` : ""}, design, caption and downloads. No separate stage charges.`, format: { platform: research?.strategy.plan.platform ?? input.platform, slideCount, basis: research || input.slideCount ? "chosen" : "suggested" } };
     state.creation = { status: "quoted", phase: "context", credits: CREATION_CREDITS, questions: [], canReply: false, quote };
     await writePublication(client, state, "Complete creation quote saved; no AI called");
     const business = (await client.query("SELECT name,context,website FROM business WHERE owner_id=$1", [viewer.id])).rows[0];
-    const snapshot: CreationInput = { schemaVersion: 15, policy: "plan-first-v1", ownerId: viewer.id, quoteId: quote.id, origin: mode, publication: state, brand, business: snapshotPaidInput(viewer.id, quote.id, "prepare", "", state, business).business, analysis, credits: CREATION_CREDITS, format: quote.format };
+    const snapshot: CreationInput = { schemaVersion: research ? 16 : 15, policy: "plan-first-v1", ownerId: viewer.id, quoteId: quote.id, origin: mode, publication: state, brand, business: snapshotPaidInput(viewer.id, quote.id, "prepare", "", state, business).business, analysis, credits: CREATION_CREDITS, format: quote.format, ...(research ? { research } : {}) };
     await client.query("INSERT INTO quote(id,owner_id,publication_id,kind,publication_version,credits,instruction,expires_at,business_context,input_snapshot,input_hash,origin,model) VALUES($1,$2,$3,'create',$4,$5,'',$6,$7,$8,$9,$10,'gpt-5.6-luna')", [quote.id, viewer.id, state.id, state.version, quote.credits, quote.expiresAt, JSON.stringify(snapshot.business), JSON.stringify(snapshot), inputHash(snapshot), mode]);
     return { quote, publication: state };
   });
@@ -69,6 +79,7 @@ export async function acceptCreation(viewer: Viewer, quoteId: string, requestKey
     requireCondition(snapshot.ownerId === viewer.id && snapshot.quoteId === quoteId && snapshot.publication.id === state.id && snapshot.publication.version === state.version, "creation_snapshot_invalid", "The quote does not match this post.", 409);
     await assertCurrentBrand(viewer.id, snapshot.brand.version, client);
     await verifyFrozenBrand(viewer.id, snapshot.brand, client);
+    if (snapshot.schemaVersion === 16) await verifyCreationResearch(client, viewer.id, snapshot.research!, snapshot.brand.version);
     const active = await client.query("SELECT o.id FROM creation_run r JOIN operation o ON o.id=r.operation_id WHERE r.owner_id=$1 AND o.status IN ('queued','running','uncertain','waiting_input') LIMIT 1", [viewer.id]);
     requireCondition(!active.rowCount, "creation_pending", "Finish the current creation before starting another.", 409);
     const operationId = randomUUID();
@@ -124,8 +135,10 @@ export async function replyCreation(viewer: Viewer, publicationId: string, input
       return { operationId, publicationId };
     }
     requireCondition(state.version === input.version && ["needs_input", "plan_ready"].includes(state.creation?.status ?? "") && state.creation?.canReply, "stale_version", "This creation is not waiting for that answer.", 409);
-    const operation = (await client.query("SELECT status FROM operation WHERE id=$1 AND owner_id=$2 AND publication_id=$3 FOR UPDATE", [operationId, viewer.id, publicationId])).rows[0];
+    const operation = (await client.query("SELECT status,input_snapshot,input_hash FROM operation WHERE id=$1 AND owner_id=$2 AND publication_id=$3 FOR UPDATE", [operationId, viewer.id, publicationId])).rows[0];
     requireCondition(operation?.status === "waiting_input", "creation_pending", "The current step must finish before another answer.", 409);
+    const snapshot = verifyCreationInput(operation.input_snapshot, operation.input_hash);
+    requireCondition(snapshot.schemaVersion !== 16 || state.creation?.status !== "plan_ready", "research_plan_locked", "This plan is bound to the reviewed research. Correct the research and prepare a new plan instead.", 409);
     requireCondition(state.messages.length < 30, "context_limit", "This creation has reached its context limit. Your work is preserved.", 409);
     state.messages.push({ id: randomUUID(), role: "user", text: input.message, createdAt: new Date().toISOString() });
     if (state.brandBrief?.blockingFacts.length === 1 && state.brandBrief.blockingFacts[0] === "Discount amount or offer terms have not been provided." && /(?:\d+(?:[.,]\d+)?\s*%|(?:omit|remove|no|without)\s+(?:the\s+)?discount|без\s+скид|ohne\s+rabatt)/iu.test(input.message)) {
@@ -162,6 +175,10 @@ export async function generateCreation(viewer: Viewer, publicationId: string, in
     const snapshot = verifyCreationInput(operation.input_snapshot, operation.input_hash);
     requireCondition(snapshot.policy === "plan-first-v1" && !snapshot.revision, "plan_required", "This operation does not accept a plan approval.", 409);
     await verifyFrozenBrand(viewer.id, snapshot.brand, client);
+    if (snapshot.schemaVersion === 16) {
+      await verifyCreationResearch(client, viewer.id, snapshot.research!, snapshot.brand.version);
+      requireCondition(plan.researchPlanHash === snapshot.research!.planHash, "research_snapshot_changed", "The displayed plan is not the exact reviewed research plan.", 409);
+    }
     state.creation = { ...state.creation, plan: { ...plan, approved: true, approvalRequestKey: input.requestKey, approvedPublicationVersion: input.version }, status: "queued", phase: "composition", canReply: false };
     state.status = "running";
     state.pendingOperation = { id: operationId, kind: "create", status: "queued", origin: state.origin };

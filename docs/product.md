@@ -21,6 +21,7 @@ The first delivery is an application running locally on Robert's Mac with a comp
 - LinkedIn and Instagram static posts: one image or a carousel of at most six slides. Six is Kely's initial product cap, not a platform limit.
 - Idea-first onboarding. Optional business URL or free-text context. An alternate entry helps people who do not have a post idea.
 - Adaptive, concise questions; save useful business facts, voice and visual preferences for the next post.
+- Before ordinary creative questions, run a bounded Brand Intelligence pass over the confirmed business identity, official public sources and owner materials. Ask only about unsupported factual claims, required originals, regulated ambiguity, source conflicts or unresolved identity; otherwise Kely proposes the professional choice. See [Brand Intelligence before planning](architecture-brand-intelligence.md).
 - Approve content before visual work. Approve a first-slide style preview before generating the remaining slides. Reuse the approved cover.
 - All revisions requested in chat. No canvas, drag-and-drop, layer inspector or manual copy editor in this release.
 - Images, real screenshots, illustrations or typography-only layouts selected per post; do not impose screenshots on every business.
@@ -43,7 +44,7 @@ Local founder testing must not require a real subscription purchase. Fixture ent
 
 ## Explicit exclusions
 
-No Stories, video, advertising creative workflow, automatic publishing, social account integrations, scheduling, social analytics, mandatory content calendar, autonomous website monitoring, email engagement automation, graphic editor, teams, public deployment or production support automation.
+No Stories, video, advertising creative workflow, automatic publishing, social account integrations, scheduling, social analytics, mandatory content calendar, ongoing autonomous website monitoring, email engagement automation, graphic editor, teams, public deployment or production support automation. A bounded user-triggered research pass before planning is in scope.
 
 Domain kely.io is a candidate, not owned or legally cleared. Seller entity, tax/legal obligations, live payment provider terms and production privacy policies are separate pre-launch decisions. Internal sample testing does not authorize public use of a client's brand, testimonials or assets.
 

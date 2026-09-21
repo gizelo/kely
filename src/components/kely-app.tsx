@@ -331,15 +331,18 @@ export function KelyApp({
     navigate("intake");
   }
 
-  async function prepareCreation(materialIds: string[], context: string) {
-    if (!account) return;
-    await run(async () => {
+  async function prepareCreation(input: { materialIds: string[]; context: string; researchId: string; researchSnapshotHash: string; brandProfileVersion: number }) {
+    if (!account) return false;
+    return run(async () => {
       const result = await request<{ publication: PublicationView; quote: CreationQuoteView }>("/api/kely/creations/quote", {
         idea: draft.idea.trim(), platform: draft.platform,
         ...(draft.slideCount > 0 ? { slideCount: draft.slideCount } : {}),
         ...(sourceAnalysisId ? { sourceAnalysisId } : {}),
-        ...(materialIds.length ? { analysisMaterialIds: materialIds } : {}),
-        ...(context.trim() ? { context: context.trim() } : {}),
+        ...(input.materialIds.length ? { analysisMaterialIds: input.materialIds } : {}),
+        ...(input.context.trim() ? { context: input.context.trim() } : {}),
+        researchId: input.researchId,
+        researchSnapshotHash: input.researchSnapshotHash,
+        brandProfileVersion: input.brandProfileVersion,
       });
       const next = result.publication;
       currentPublicationId.current = next.id;
@@ -351,6 +354,10 @@ export function KelyApp({
       setResumeDraft(false);
       try {
         localStorage.setItem("kely.last-post.v1." + account.user.id, next.id);
+      } catch {}
+      try {
+        sessionStorage.removeItem("kely:research:v1:" + account.user.id + ":" + draft.idea.trim());
+        sessionStorage.removeItem("kely:research:v1:" + account.user.id + ":" + draft.idea.trim() + ":command");
       } catch {}
       setDraft(emptyDraft);
       setSourceAnalysisId(null);
@@ -750,7 +757,7 @@ export function KelyApp({
                 />
               </section>
             )}
-            {view === "intake" && <CreationIntake key={account.user.id} ownerId={account.user.id} draft={draft} busy={busy} run={run} onError={handleError} onBack={() => navigate("new")} onContinue={(materialIds, context) => void prepareCreation(materialIds, context)} />}
+            {view === "intake" && <CreationIntake key={account.user.id} ownerId={account.user.id} draft={draft} businessName={account.business?.name} businessWebsite={account.business?.website} busy={busy} run={run} onError={handleError} onBack={() => navigate("new")} onContinue={prepareCreation} />}
             {view === "billing" && (
               <section className="creation-plan beta-usage"><span className="eyebrow">YOUR ACCOUNT</span><h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? "Access isn’t active yet." : "Your weekly allowance"}</h1>{account.billing.tier === "none" && account.billing.packRemaining <= 0 ? <><p>This workspace can save ideas, but creating posts requires beta access.</p><p className="field-hint">Contact the beta organiser if you expected access.</p></> : <><div className="usage-hero"><strong>{Math.floor((account.billing.weeklyRemaining + account.billing.packRemaining) / 30)}</strong><span>posts left this week</span></div><dl><div><dt>In progress</dt><dd>{account.billing.reserved > 0 ? "1 post" : "None"}</dd></div>{account.billing.nextResetAt && <div><dt>Next reset</dt><dd>{new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(account.billing.nextResetAt))}</dd></div>}</dl><p className="field-hint">A post includes planning, generation, and one focused refinement. Your finished posts stay available after the weekly reset.</p></>}<a className="text-button" href="/beta-info">Privacy and data</a></section>
             )}

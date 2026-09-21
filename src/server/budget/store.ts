@@ -7,6 +7,7 @@ import { RATE_SCHEDULE_ID, type UsageAssessment } from "../providers/text-envelo
 import { assessProviderUsage, providerMaximumMicros, providerRateSchedule, type BoundedProviderRequest } from "../providers/provider-envelope";
 import { VISION_RATE_SCHEDULE_ID } from "../providers/vision-envelope";
 import { IMAGE_RATE_SCHEDULE_ID, IMAGE_RATE_SCHEDULE_ID_V2, IMAGE_RATE_SCHEDULE_ID_V3, IMAGE_RATE_SCHEDULE_ID_V4, type ProviderValidationIssue } from "../providers/image-envelope";
+import { WEB_SEARCH_RATE_SCHEDULE_ID } from "../providers/web-search-envelope";
 import { budgetFiles, DEVELOPMENT_BUDGET_CEILING_MICROS, DEVELOPMENT_BUDGET_GENESIS_HASH, developmentBudgetLocation, type BudgetLocation } from "./identity";
 import { KnownRejectionError, knownRejectionReviewSchema, parseKnownRejectionBinding, previewStoredKnownRejection, type KnownRejectionBinding, type KnownRejectionReview } from "./known-rejection";
 import { AbandonmentError, abandonmentReviewSchema, parseAbandonmentBinding, previewStoredAbandonment, type AbandonmentBinding, type AbandonmentReview } from "./undeliverable";
@@ -21,7 +22,7 @@ export const BUDGET_SCHEMA = `
 `;
 
 export type BudgetIdentity = BudgetLocation & { schemaVersion: 1; ceilingMicros: number; fileIdentity: string };
-export type AttemptInput = { key: string; ownerId: string; operationId: string; step: string; snapshot: Record<string, unknown>; request: BoundedProviderRequest };
+export type AttemptInput = { key: string; ownerId: string; operationId: string; step: string; snapshot: Record<string, unknown>; request: BoundedProviderRequest; packageId?: string };
 export type BudgetAttempt = AttemptInput & {
   inputHash: string; maximumMicros: number; status: "dispatching" | "uncertain" | "settled" | "rejected" | "abandoned";
   settledMicros: number; uncertainMicros: number; response?: unknown; assessment?: UsageAssessment; reason?: string;
@@ -29,9 +30,23 @@ export type BudgetAttempt = AttemptInput & {
   abandonmentReview?: AbandonmentReview;
   validationIssues?: ProviderValidationIssue[];
 };
+export type BudgetPackageInput = {
+  id: string;
+  ownerId: string;
+  operationId: string;
+  scopeHash: string;
+  steps: { step: string; maximumMicros: number }[];
+};
+export type BudgetPackage = BudgetPackageInput & {
+  inputHash: string;
+  maximumMicros: number;
+  remainingMicros: number;
+  status: "active" | "completed" | "released";
+  evidenceHash?: string;
+};
 export type BudgetState = {
   id: string; purpose: "development" | "fake"; ceilingMicros: number; settledMicros: number;
-  reservedMicros: number; uncertainMicros: number; retainedRejectionMicros: number; retainedAbandonmentMicros: number; availableMicros: number; attempts: BudgetAttempt[];
+  reservedMicros: number; uncertainMicros: number; retainedRejectionMicros: number; retainedAbandonmentMicros: number; availableMicros: number; attempts: BudgetAttempt[]; packages: BudgetPackage[];
 };
 export type EventRow = { sequence: number; payload: string; previous_hash: string; hash: string };
 const identitySchema = z.object({
@@ -40,15 +55,26 @@ const identitySchema = z.object({
 }).strict();
 const inputSchema = z.object({
   key: z.string().min(1).max(160), ownerId: z.string().min(1).max(160), operationId: z.string().min(1).max(160),
-  step: z.string().min(1).max(80), snapshot: z.record(z.string(), z.unknown()), request: z.unknown(),
+  step: z.string().min(1).max(80), snapshot: z.record(z.string(), z.unknown()), request: z.unknown(), packageId: z.string().min(8).max(160).optional(),
 }).strict();
+const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const packageInputSchema = z.object({
+  id: z.string().min(8).max(160), ownerId: z.string().min(1).max(160), operationId: z.string().min(1).max(160), scopeHash: hashSchema,
+  steps: z.array(z.object({ step: z.string().min(1).max(80), maximumMicros: z.number().int().positive() }).strict()).min(1).max(16),
+}).strict().superRefine((value, context) => {
+  if (new Set(value.steps.map((item) => item.step)).size !== value.steps.length) context.addIssue({ code: "custom", message: "Package steps must be unique." });
+  const total = value.steps.reduce((sum, item) => sum + BigInt(item.maximumMicros), 0n);
+  if (total > BigInt(Number.MAX_SAFE_INTEGER)) context.addIssue({ code: "custom", message: "Package maximum is too large." });
+});
 export const eventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("initialized"), identity: identitySchema }).strict(),
-  z.object({ type: z.literal("dispatching"), input: inputSchema, inputHash: z.string(), maximumMicros: z.number().int().positive(), rateSchedule: z.enum([RATE_SCHEDULE_ID, VISION_RATE_SCHEDULE_ID, IMAGE_RATE_SCHEDULE_ID, IMAGE_RATE_SCHEDULE_ID_V2, IMAGE_RATE_SCHEDULE_ID_V3, IMAGE_RATE_SCHEDULE_ID_V4]) }).strict(),
+  z.object({ type: z.literal("dispatching"), input: inputSchema, inputHash: z.string(), maximumMicros: z.number().int().positive(), rateSchedule: z.enum([RATE_SCHEDULE_ID, VISION_RATE_SCHEDULE_ID, IMAGE_RATE_SCHEDULE_ID, IMAGE_RATE_SCHEDULE_ID_V2, IMAGE_RATE_SCHEDULE_ID_V3, IMAGE_RATE_SCHEDULE_ID_V4, WEB_SEARCH_RATE_SCHEDULE_ID]) }).strict(),
   z.object({ type: z.literal("uncertain"), key: z.string(), reason: z.enum(["transport_failed", "invalid_response", "timeout"]), response: z.unknown().optional(), validationIssues: z.array(z.object({ path: z.string().max(160).regex(/^[a-zA-Z0-9_.]*$/u), code: z.string().min(1).max(64).regex(/^[a-zA-Z0-9_]+$/u) }).strict()).max(8).optional() }).strict(),
   z.object({ type: z.literal("settled"), key: z.string(), response: z.unknown(), assessment: z.unknown() }).strict(),
   z.object({ type: z.literal("reviewed_known_rejection"), key: z.string(), review: knownRejectionReviewSchema }).strict(),
   z.object({ type: z.literal("abandoned_undeliverable"), key: z.string(), review: abandonmentReviewSchema }).strict(),
+  z.object({ type: z.literal("package_reserved"), input: packageInputSchema, inputHash: hashSchema, maximumMicros: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("package_closed"), id: z.string().min(8).max(160), ownerId: z.string().min(1).max(160), operationId: z.string().min(1).max(160), scopeHash: hashSchema, outcome: z.enum(["completed", "released"]), evidenceHash: hashSchema }).strict(),
 ]);
 
 export class BudgetError extends Error {
@@ -65,20 +91,42 @@ export function replayBudgetHistory(identity: BudgetIdentity, rows: EventRow[]):
   if (identity.purpose === "development") integrity(rows[0].hash === DEVELOPMENT_BUDGET_GENESIS_HASH);
   let previousHash = "0".repeat(64);
   const attempts = new Map<string, BudgetAttempt>();
+  const packages = new Map<string, BudgetPackage>();
   for (const [index, row] of rows.entries()) {
     integrity(row.sequence === index + 1 && row.previous_hash === previousHash && row.hash === inputHash({ sequence: row.sequence, payload: row.payload, previousHash }));
     const event = eventSchema.parse(JSON.parse(row.payload));
     if (index === 0) integrity(event.type === "initialized" && canonicalJson(event.identity) === canonicalJson(identity));
     else {
       integrity(event.type !== "initialized");
-      if (event.type === "dispatching") {
+      if (event.type === "package_reserved") {
+        const input = event.input as BudgetPackageInput;
+        integrity(!packages.has(input.id) && ![...packages.values()].some((item) => item.ownerId === input.ownerId && item.operationId === input.operationId));
+        integrity(inputHash(input) === event.inputHash);
+        const maximumMicros = input.steps.reduce((sum, item) => sum + item.maximumMicros, 0);
+        integrity(Number.isSafeInteger(maximumMicros) && maximumMicros === event.maximumMicros);
+        const exposure = budgetState(identity, attempts, packages);
+        integrity(canReserveBudget({ spentMicros: exposure.settledMicros, reservedMicros: exposure.reservedMicros, uncertainMicros: exposure.uncertainMicros, ceilingMicros: exposure.ceilingMicros }, maximumMicros));
+        packages.set(input.id, { ...input, inputHash: event.inputHash, maximumMicros, remainingMicros: maximumMicros, status: "active" });
+      } else if (event.type === "package_closed") {
+        const value = packages.get(event.id);
+        integrity(value && value.status === "active" && value.ownerId === event.ownerId && value.operationId === event.operationId && value.scopeHash === event.scopeHash);
+        integrity(![...attempts.values()].some((attempt) => attempt.packageId === value.id && (attempt.status === "dispatching" || attempt.status === "uncertain")));
+        value.status = event.outcome;
+        value.remainingMicros = 0;
+        value.evidenceHash = event.evidenceHash;
+      } else if (event.type === "dispatching") {
         const input = event.input as AttemptInput;
         integrity(!attempts.has(input.key) && inputHash(input) === event.inputHash);
         integrity(![...attempts.values()].some((attempt) => sameStep(attempt, input)));
         integrity(event.rateSchedule === providerRateSchedule(input.request) && event.maximumMicros === providerMaximumMicros(input.request));
         integrity(![...attempts.values()].some((attempt) => attempt.status === "dispatching"));
-        const exposure = budgetState(identity, attempts);
-        integrity(canReserveBudget({ spentMicros: exposure.settledMicros, reservedMicros: exposure.reservedMicros, uncertainMicros: exposure.uncertainMicros, ceilingMicros: exposure.ceilingMicros }, event.maximumMicros));
+        const exposure = budgetState(identity, attempts, packages);
+        if (input.packageId) {
+          const value = packages.get(input.packageId);
+          const step = value?.steps.find((item) => item.step === input.step);
+          integrity(value?.status === "active" && value.ownerId === input.ownerId && value.operationId === input.operationId && step && step.maximumMicros >= event.maximumMicros && value.remainingMicros >= event.maximumMicros);
+          value.remainingMicros -= event.maximumMicros;
+        } else integrity(canReserveBudget({ spentMicros: exposure.settledMicros, reservedMicros: exposure.reservedMicros, uncertainMicros: exposure.uncertainMicros, ceilingMicros: exposure.ceilingMicros }, event.maximumMicros));
         attempts.set(input.key, { ...input, inputHash: event.inputHash, maximumMicros: event.maximumMicros, status: "dispatching", settledMicros: 0, uncertainMicros: 0 });
       } else {
         const attempt = attempts.get(event.key);
@@ -113,22 +161,23 @@ export function replayBudgetHistory(identity: BudgetIdentity, rows: EventRow[]):
     }
     previousHash = row.hash;
   }
-  return budgetState(identity, attempts);
+  return budgetState(identity, attempts, packages);
 }
 
-function budgetState(identity: BudgetIdentity, attempts: Map<string, BudgetAttempt>): BudgetState {
+function budgetState(identity: BudgetIdentity, attempts: Map<string, BudgetAttempt>, packages = new Map<string, BudgetPackage>()): BudgetState {
   const values = [...attempts.values()];
   const settledMicros = values.reduce((sum, attempt) => sum + attempt.settledMicros, 0);
   const uncertainMicros = values.reduce((sum, attempt) => sum + attempt.uncertainMicros, 0);
   // Reviewed rejections remain inside total unpriced liability used by admission checks.
   const retainedRejectionMicros = values.filter((attempt) => attempt.status === "rejected").reduce((sum, attempt) => sum + attempt.uncertainMicros, 0);
   const retainedAbandonmentMicros = values.filter((attempt) => attempt.status === "abandoned").reduce((sum, attempt) => sum + attempt.uncertainMicros, 0);
-  const reservedMicros = values.filter((attempt) => attempt.status === "dispatching").reduce((sum, attempt) => sum + attempt.maximumMicros, 0);
+  const reservedMicros = values.filter((attempt) => attempt.status === "dispatching").reduce((sum, attempt) => sum + attempt.maximumMicros, 0)
+    + [...packages.values()].filter((value) => value.status === "active").reduce((sum, value) => sum + value.remainingMicros, 0);
   integrity([settledMicros, uncertainMicros, retainedRejectionMicros, retainedAbandonmentMicros, reservedMicros].every((amount) => Number.isSafeInteger(amount) && amount >= 0));
   integrity(retainedRejectionMicros + retainedAbandonmentMicros <= uncertainMicros);
   const availableMicros = DEVELOPMENT_BUDGET_CEILING_MICROS - settledMicros - uncertainMicros - reservedMicros;
   integrity(availableMicros >= 0);
-  return { id: identity.id, purpose: identity.purpose, ceilingMicros: DEVELOPMENT_BUDGET_CEILING_MICROS, settledMicros, uncertainMicros, retainedRejectionMicros, retainedAbandonmentMicros, reservedMicros, availableMicros, attempts: values };
+  return { id: identity.id, purpose: identity.purpose, ceilingMicros: DEVELOPMENT_BUDGET_CEILING_MICROS, settledMicros, uncertainMicros, retainedRejectionMicros, retainedAbandonmentMicros, reservedMicros, availableMicros, attempts: values, packages: [...packages.values()] };
 }
 
 
@@ -222,6 +271,39 @@ export class BudgetStore {
     return this.#transaction((state, rows) => ({ state: structuredClone(state), rows: structuredClone(rows) }));
   }
 
+  reservePackage(input: BudgetPackageInput) {
+    const detached = packageInputSchema.parse(JSON.parse(canonicalJson(input))) as BudgetPackageInput;
+    const maximumMicros = detached.steps.reduce((sum, item) => sum + item.maximumMicros, 0);
+    const hash = inputHash(detached);
+    return this.#transaction((state, rows) => {
+      integrity(!existsSync(`${this.#files.database}.transferred`));
+      const prior = state.packages.find((item) => item.id === detached.id || (item.ownerId === detached.ownerId && item.operationId === detached.operationId));
+      if (prior) {
+        if (prior.inputHash !== hash) throw new BudgetError("attempt_conflict", "That package reservation already has different immutable inputs.");
+        return structuredClone(prior);
+      }
+      if (!canReserveBudget({ spentMicros: state.settledMicros, reservedMicros: state.reservedMicros, uncertainMicros: state.uncertainMicros, ceilingMicros: state.ceilingMicros }, maximumMicros)) throw new BudgetError("budget_exhausted", "The project's development API ceiling cannot cover this complete package.");
+      this.#append(rows, { type: "package_reserved", input: detached, inputHash: hash, maximumMicros });
+      return { ...detached, inputHash: hash, maximumMicros, remainingMicros: maximumMicros, status: "active" as const };
+    });
+  }
+
+  closePackage(input: { id: string; ownerId: string; operationId: string; scopeHash: string; outcome: "completed" | "released"; evidenceHash: string }) {
+    const exact = eventSchema.options.find((schema) => schema.safeParse({ type: "package_closed", ...input }).success)?.parse({ type: "package_closed", ...input }) as Extract<z.infer<typeof eventSchema>, { type: "package_closed" }> | undefined;
+    integrity(exact);
+    return this.#transaction((state, rows) => {
+      const value = state.packages.find((item) => item.id === exact.id);
+      integrity(value && value.ownerId === exact.ownerId && value.operationId === exact.operationId && value.scopeHash === exact.scopeHash);
+      if (value.status !== "active") {
+        if (value.status !== exact.outcome || value.evidenceHash !== exact.evidenceHash) throw new BudgetError("attempt_conflict", "That package was already closed with different durable evidence.");
+        return structuredClone(value);
+      }
+      if (state.attempts.some((attempt) => attempt.packageId === value.id && (attempt.status === "dispatching" || attempt.status === "uncertain"))) throw new BudgetError("attempt_uncertain", "This package has an in-flight or uncertain attempt and cannot release its reservation.");
+      this.#append(rows, exact);
+      return { ...value, status: exact.outcome, remainingMicros: 0, evidenceHash: exact.evidenceHash };
+    });
+  }
+
   fenceForTransfer(destination: string, expectedHash: string) {
     integrity(/^[a-zA-Z0-9_-]{16,120}$/.test(destination));
     return this.#transaction((state, rows) => {
@@ -278,7 +360,11 @@ export class BudgetStore {
         return { dispatched: false, attempt: previous };
       }
       if (state.attempts.some((attempt) => attempt.status === "dispatching")) throw new BudgetError("dispatch_in_progress", "A provider attempt is in flight or needs crash reconciliation. No new request was sent.");
-      if (!canReserveBudget({ spentMicros: state.settledMicros, reservedMicros: state.reservedMicros, uncertainMicros: state.uncertainMicros, ceilingMicros: state.ceilingMicros }, maximumMicros)) throw new BudgetError("budget_exhausted", "The project's development API ceiling cannot cover this request. Buying customer credits cannot increase this ceiling.");
+      if (detached.packageId) {
+        const value = state.packages.find((item) => item.id === detached.packageId);
+        const step = value?.steps.find((item) => item.step === detached.step);
+        if (!value || value.status !== "active" || value.ownerId !== detached.ownerId || value.operationId !== detached.operationId || !step || step.maximumMicros < maximumMicros || value.remainingMicros < maximumMicros) throw new BudgetError("budget_exhausted", "This request is not covered by its complete package reservation.");
+      } else if (!canReserveBudget({ spentMicros: state.settledMicros, reservedMicros: state.reservedMicros, uncertainMicros: state.uncertainMicros, ceilingMicros: state.ceilingMicros }, maximumMicros)) throw new BudgetError("budget_exhausted", "The project's development API ceiling cannot cover this request. Buying customer credits cannot increase this ceiling.");
       this.#append(rows, { type: "dispatching", input: detached, inputHash: hash, maximumMicros, rateSchedule: providerRateSchedule(detached.request) });
       return { dispatched: true, attempt: { ...detached, inputHash: hash, maximumMicros, status: "dispatching", settledMicros: 0, uncertainMicros: 0 } };
     });

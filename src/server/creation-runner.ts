@@ -11,7 +11,7 @@ import { assertBrandReady } from "./brand-policy";
 import { freezeArtDirection } from "./art-direction";
 import { readPublication, writePublication } from "./publications";
 import { inputHash, type PaidInputSnapshot } from "./paid-input";
-import { creationDesignInput, creationPlanHash, shouldGenerateEditorialArtwork, verifyCreationInput, type CreationInput } from "./creation-input";
+import { creationDesignInput, creationPlanHash, researchedPublicationPlan, shouldGenerateEditorialArtwork, verifyCreationInput, verifyCreationResearch, type CreationInput } from "./creation-input";
 import { providerGateway } from "./providers/runtime";
 import type { FakeProviderGateway } from "./providers/gateway";
 import type { BoundedProviderRequest } from "./providers/provider-envelope";
@@ -65,7 +65,8 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
 
     async function checkpoint(phase: CreationView["phase"], status: CreationView["status"] = "working", publish = false) {
       const waiting = status === "needs_input" || status === "plan_ready";
-      state.creation = { ...state.creation!, operationId: id, phase, status, canReply: waiting && replies < 3, discussionLimitReached: waiting && replies >= 3 };
+      const researchPlanLocked = input.schemaVersion === 16 && status === "plan_ready";
+      state.creation = { ...state.creation!, operationId: id, phase, status, canReply: waiting && replies < 3 && !researchPlanLocked, discussionLimitReached: waiting && replies >= 3 };
       const cost = await costs();
       await transaction(async (client) => {
         await lockWallet(client, row.owner_id);
@@ -113,12 +114,29 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
 
     try {
       await verifyFrozenBrand(row.owner_id, input.brand);
+      if (input.schemaVersion === 16) await verifyCreationResearch(pool, row.owner_id, input.research!, input.brand.version);
       if (input.analysis && !state.sourceAnalysis) {
         await checkpoint("analysis");
         const proposal = await step<AnalysisProposal>("analysis:0", input.analysis, analysisRequest(input.analysis, "brand-analysis-v2"), (response) => parseAnalysis(response, input.analysis!, "brand-analysis-v2"));
         state.sourceAnalysis = { id: stableId(id, "analysis"), origin: input.origin, summary: proposal.summary, observations: proposal.observations, limitations: proposal.limitations };
         if (!input.brand.rules.artDirection && !input.brand.rules.palette) state.artDirection = freezeArtDirection(proposal.direction, input.brand.materials, Boolean(state.brandBrief?.noPhoto));
         await checkpoint("design");
+      }
+      if (input.schemaVersion === 16 && !input.revision && !state.creation?.plan) {
+        const researched = researchedPublicationPlan(input.research!, input.brand, input.origin, (index) => stableId(id, `slide:${index}`));
+        state.platform = researched.platform;
+        state.slideCount = researched.slideCount;
+        state.slides = researched.slides;
+        state.caption = researched.caption;
+        state.captionOrigin = input.origin;
+        state.artDirection ??= structuredClone(input.brand.art!);
+        state.outlineApproved = false;
+        state.coverApproved = false;
+        state.creation!.artworkLayout = "landscape-editorial-v1";
+        await validateComposedCopy(state);
+        state.creation!.plan = { version: 1, hash: creationPlanHash(state), approved: false, visualDirection: researched.visualDirection, researchPlanHash: input.research!.planHash };
+        await checkpoint("plan", "plan_ready", true);
+        return;
       }
       if (state.slides.length !== state.slideCount || (input.revision && state.creation?.phase !== "composition") || (input.policy === "plan-first-v1" && !input.revision && !state.creation?.plan?.approved)) {
         requireCondition(replies < 3, "creation_limit", "Kely could not finish within this creation's allowance. Your draft is preserved and the creation credits are released.", 409);
@@ -165,7 +183,7 @@ export async function runCreation(id: string, options: CreationRunOptions = {}) 
         }
         await checkpoint("composition");
       }
-      if (input.policy === "plan-first-v1" && !input.revision) requireCondition(state.creation?.plan?.approved && state.creation.plan.hash === creationPlanHash(state), "plan_required", "Review and approve the exact saved plan before generating images.", 409);
+      if (input.policy === "plan-first-v1" && !input.revision) requireCondition(state.creation?.plan?.approved && state.creation.plan.hash === creationPlanHash(state) && (input.schemaVersion !== 16 || state.creation.plan.researchPlanHash === input.research!.planHash), "plan_required", "Review and approve the exact saved plan before generating images.", 409);
       await reserveCreationStorage(id);
       storageReserved = true;
       if (shouldGenerateEditorialArtwork(input, state)) {

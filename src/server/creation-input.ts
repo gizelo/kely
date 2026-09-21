@@ -10,6 +10,31 @@ import { semanticDirectionEligibility } from "./semantic-direction";
 import { semanticTones, visualGrammars } from "../shared/semantic-direction";
 import { requireCondition } from "./errors";
 import { freezeArtDirection } from "./art-direction";
+import type { Pool, PoolClient } from "pg";
+import { researchStrategySchema, type ResearchStrategyOutput } from "./providers/research-stages";
+import { validateCreativePlan } from "./creative-intent";
+import type { SlideView } from "../shared/contracts";
+
+type ResearchQueryClient = Pick<Pool | PoolClient, "query">;
+
+export interface FrozenCreationResearch {
+  runId: string;
+  snapshotId: string;
+  snapshotVersion: number;
+  snapshotHash: string;
+  entityId: string;
+  sourceHashes: { evidenceId: string; contentHash: string }[];
+  brandProfileVersion: number;
+  strategy: ResearchStrategyOutput;
+  strategyHash: string;
+  planHash: string;
+}
+
+export interface CreationResearchSelection {
+  researchId: string;
+  researchSnapshotHash: string;
+  brandProfileVersion: number;
+}
 
 export const CREATION_CREDITS = 30;
 export const CREATION_REVISION_CREDITS = 11;
@@ -27,11 +52,11 @@ export function applySelectedOriginals(brand: FrozenBrand, materialIds: string[]
   return next;
 }
 
-export function shouldGenerateEditorialArtwork(input: Pick<CreationInput, "revision" | "analysis">, state: PublicationView) {
-  return !input.revision && !state.artwork && !state.artDirection?.direction.heroMaterialIds.length && !state.brandBrief?.noPhoto && !input.analysis?.selected.length;
+export function shouldGenerateEditorialArtwork(input: Pick<CreationInput, "revision" | "analysis"> & Partial<Pick<CreationInput, "schemaVersion">>, state: PublicationView) {
+  return input.schemaVersion !== 16 && !input.revision && !state.artwork && !state.artDirection?.direction.heroMaterialIds.length && !state.brandBrief?.noPhoto && !input.analysis?.selected.length;
 }
 export interface CreationInput {
-  schemaVersion: 13 | 14 | 15;
+  schemaVersion: 13 | 14 | 15 | 16;
   policy: "unified-creation-v1" | "unified-creation-v2" | "plan-first-v1";
   ownerId: string;
   quoteId: string;
@@ -42,7 +67,115 @@ export interface CreationInput {
   analysis: AnalysisInput | null;
   credits: number;
   format: CreationQuoteView["format"];
+  research?: FrozenCreationResearch;
   revision?: { instruction: string; scope: RevisionScope };
+}
+
+function normalizedSourceHashes(value: FrozenCreationResearch["sourceHashes"]) {
+  return [...value].sort((a, b) => a.evidenceId.localeCompare(b.evidenceId));
+}
+
+export async function freezeCreationResearch(client: ResearchQueryClient, ownerId: string, selection: CreationResearchSelection): Promise<FrozenCreationResearch> {
+  requireCondition(/^[a-f0-9]{64}$/u.test(selection.researchSnapshotHash), "research_snapshot_invalid", "Choose a completed research result before creating the post.", 409);
+  requireCondition(Number.isSafeInteger(selection.brandProfileVersion) && selection.brandProfileVersion >= 0, "brand_version_invalid", "Choose the current Brand Profile before creating the post.", 409);
+  const row = (await client.query(
+    `SELECT r.id run_id,s.id snapshot_id,s.version snapshot_version,s.snapshot_hash,s.snapshot,
+            e.status
+       FROM brand_research_run r
+       JOIN LATERAL (
+         SELECT id,version,snapshot_hash,snapshot
+           FROM brand_research_snapshot
+          WHERE owner_id=r.owner_id AND run_id=r.id
+          ORDER BY version DESC LIMIT 1
+       ) s ON true
+       JOIN LATERAL (
+         SELECT status FROM brand_research_event
+          WHERE owner_id=r.owner_id AND run_id=r.id
+          ORDER BY sequence DESC LIMIT 1
+       ) e ON true
+      WHERE r.owner_id=$1 AND r.id=$2`,
+    [ownerId, selection.researchId],
+  )).rows[0];
+  requireCondition(row, "research_not_found", "That research result is not available for this account.", 404);
+  requireCondition(row.status === "review_ready", "research_not_ready", "Finish the saved research questions before preparing a plan.", 409);
+  requireCondition(row.snapshot_hash === selection.researchSnapshotHash, "research_snapshot_changed", "The research result changed. Review the current findings before preparing a plan.", 409);
+  const resolution = row.snapshot?.entityResolution;
+  requireCondition(resolution?.status === "resolved" && resolution.confidence === "high" && typeof resolution.candidateId === "string" && resolution.candidateId, "research_identity_unconfirmed", "Confirm the exact business before preparing a plan.", 409);
+  const evidence = Array.isArray(row.snapshot?.evidence) ? row.snapshot.evidence : [];
+  const sourceHashes = normalizedSourceHashes(evidence.map((item: { id?: unknown; contentHash?: unknown }) => {
+    requireCondition(typeof item.id === "string" && typeof item.contentHash === "string" && /^[a-f0-9]{64}$/u.test(item.contentHash), "research_snapshot_invalid", "The saved research evidence is invalid.", 409);
+    return { evidenceId: item.id, contentHash: item.contentHash };
+  }));
+  let strategy: ResearchStrategyOutput;
+  try { strategy = researchStrategySchema.parse(row.snapshot?.strategy); }
+  catch { requireCondition(false, "research_plan_invalid", "The reviewed research does not contain a usable publication plan.", 409); throw new Error("unreachable"); }
+  requireCondition(row.snapshot?.critic?.outcome === "pass" || row.snapshot?.critic?.outcome === "corrected", "research_plan_unchecked", "The research plan has not passed its saved quality review.", 409);
+  return {
+    runId: row.run_id,
+    snapshotId: row.snapshot_id,
+    snapshotVersion: Number(row.snapshot_version),
+    snapshotHash: row.snapshot_hash,
+    entityId: resolution.candidateId,
+    sourceHashes,
+    brandProfileVersion: selection.brandProfileVersion,
+    strategy: structuredClone(strategy),
+    strategyHash: inputHash(strategy),
+    planHash: inputHash(strategy.plan),
+  };
+}
+
+export async function verifyCreationResearch(client: ResearchQueryClient, ownerId: string, frozen: FrozenCreationResearch, brandProfileVersion: number) {
+  requireCondition(frozen.brandProfileVersion === brandProfileVersion, "research_brand_mismatch", "The saved research and Brand Profile versions do not match.", 409);
+  const current = await freezeCreationResearch(client, ownerId, {
+    researchId: frozen.runId,
+    researchSnapshotHash: frozen.snapshotHash,
+    brandProfileVersion: frozen.brandProfileVersion,
+  });
+  requireCondition(
+    current.snapshotId === frozen.snapshotId
+      && current.snapshotVersion === frozen.snapshotVersion
+      && current.entityId === frozen.entityId
+      && current.strategyHash === frozen.strategyHash
+      && current.planHash === frozen.planHash
+      && inputHash(current.strategy) === inputHash(frozen.strategy)
+      && inputHash(normalizedSourceHashes(current.sourceHashes)) === inputHash(normalizedSourceHashes(frozen.sourceHashes)),
+    "research_snapshot_changed",
+    "The frozen research evidence no longer matches this creation.",
+    409,
+  );
+  return current;
+}
+
+function splitApprovedCopy(copy: string) {
+  const [title, ...body] = copy.split("\n");
+  requireCondition(Boolean(title?.trim()), "research_plan_incompatible", "A researched slide has no usable copy.", 409);
+  return { title, body: body.join("\n") };
+}
+
+export function researchedPublicationPlan(research: FrozenCreationResearch, brand: FrozenBrand, origin: CreationInput["origin"], slideId: (index: number) => string) {
+  const { plan } = research.strategy;
+  requireCondition(plan.slides.length === plan.slideCount && (plan.format === "single" ? plan.slideCount === 1 : plan.slideCount >= 2), "research_plan_incompatible", "The reviewed research plan has an inconsistent publication format.", 409);
+  requireCondition(Boolean(brand.art), "research_plan_incompatible", "The reviewed plan cannot be rendered without a saved art direction.", 409);
+  const slides: SlideView[] = plan.slides.map((slide, index) => {
+    requireCondition(slide.index === index + 1 && slide.visualDirection.length <= 300, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
+    const materialId = slide.materialIds[0] ?? "";
+    requireCondition(slide.materialIds.length <= 1 && (!materialId || brand.art!.direction.heroMaterialIds.includes(materialId)), "research_plan_incompatible", "A reviewed slide references an unavailable or unsupported original material.", 409);
+    const last = plan.slideCount > 1 && index === plan.slideCount - 1;
+    const creativePlan = validateCreativePlan({
+      purpose: index === 0 ? "hook" : last ? "closing" : "explain",
+      recipe: materialId ? "graphic-stage" : last ? "closing" : "type-poster",
+      materialId,
+      heading: index === 0 || last ? "large" : "medium",
+      background: last ? "foreground" : "background",
+      alignment: last ? "center" : "left",
+      rationale: slide.visualDirection,
+    }, brand.art!);
+    return { id: slideId(index), index, ...splitApprovedCopy(slide.copy), creativePlan, copyOrigin: origin, visualOrigin: "deterministic" };
+  });
+  return { platform: plan.platform, slideCount: plan.slideCount, slides, caption: plan.caption, visualDirection: [
+    `Purpose: ${plan.purpose}`, `Audience: ${plan.audience}`, `Angle: ${plan.angle}`, `CTA: ${plan.cta}`, `Visual system: ${plan.visualSystem}`,
+    ...plan.slides.map((slide) => `Slide ${slide.index} — ${slide.objective}: ${slide.visualDirection}`),
+  ].join("\n") };
 }
 
 export function suggestedSlideCount(idea: string) {
@@ -55,7 +188,11 @@ export function suggestedSlideCount(idea: string) {
 }
 
 export function verifyCreationInput(value: CreationInput, hash: string) {
-  requireCondition(((value?.schemaVersion === 13 && value.policy === "unified-creation-v1") || (value?.schemaVersion === 14 && value.policy === "unified-creation-v2") || (value?.schemaVersion === 15 && value.policy === "plan-first-v1")) && inputHash(value) === hash && value.credits === (value.revision ? CREATION_REVISION_CREDITS : CREATION_CREDITS) && ["ai_preview", "openai"].includes(value.origin), "creation_snapshot_invalid", "The saved creation quote could not be verified.", 409);
+  const versionedPolicy = (value?.schemaVersion === 13 && value.policy === "unified-creation-v1")
+    || (value?.schemaVersion === 14 && value.policy === "unified-creation-v2")
+    || (value?.schemaVersion === 15 && value.policy === "plan-first-v1" && !value.research)
+    || (value?.schemaVersion === 16 && value.policy === "plan-first-v1" && Boolean(value.research));
+  requireCondition(versionedPolicy && inputHash(value) === hash && value.credits === (value.revision ? CREATION_REVISION_CREDITS : CREATION_CREDITS) && ["ai_preview", "openai"].includes(value.origin), "creation_snapshot_invalid", "The saved creation quote could not be verified.", 409);
   return structuredClone(value);
 }
 

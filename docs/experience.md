@@ -19,6 +19,8 @@ Before payment, retain typed idea and selected platform in the browser; optional
 ## Conversation and approval
 
 - Ask one compact batch of necessary questions at a time. Prefer an informed suggestion when its uncertainty is harmless and clearly labeled.
+- Research first. Audience, CTA, mood, palette, typography category, layout and visual metaphor are Kely proposals unless the owner has constrained them. Do not turn a conventional client brief into mandatory onboarding.
+- Before the plan, show what was verified, what the owner supplied, what Kely inferred and what could not be accessed. A page or social preview is never represented as a complete brand reading.
 - Ask factual clarification rather than inventing prices, product features, availability, reviews, customer outcomes, medical claims or founder experiences.
 - Store business facts with provenance: founder/user statement, website source with fetch time, or unverified suggestion. User corrections supersede earlier stored facts with history retained.
 - Show a readable content outline and caption before visuals; approving it also confirms the factual claims displayed.

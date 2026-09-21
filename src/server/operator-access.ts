@@ -46,7 +46,7 @@ export async function grantTestAllowance(input: unknown, now = new Date()) {
   });
 }
 
-export async function revokeTestAllowance(input: unknown) {
+export async function revokeTestAllowance(input: unknown, now = new Date()) {
   const value = z.object({ email, commandKey }).strict().parse(input);
   return transaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock($1)", [6381043]);
@@ -57,7 +57,7 @@ export async function revokeTestAllowance(input: unknown) {
     }
     const owner = (await client.query('SELECT id FROM "user" WHERE lower(email)=$1 FOR UPDATE', [value.email])).rows[0];
     requireCondition(owner, "account_missing", "That account does not exist.", 404);
-    await client.query("UPDATE credit_account SET tier='none',active_until=now(),cancel_at_period_end=false,pending_tier=NULL,pending_cadence=NULL WHERE owner_id=$1", [owner.id]);
+    await client.query("UPDATE credit_account SET tier='none',active_until=$2,cancel_at_period_end=false,pending_tier=NULL,pending_cadence=NULL WHERE owner_id=$1", [owner.id, now]);
     await client.query("INSERT INTO operator_access_event(id,command_key,owner_id,action,detail) VALUES($1,$2,$3,'revoke',$4)", [randomUUID(), value.commandKey, owner.id, JSON.stringify({ email: value.email })]);
     return { ownerId: owner.id as string, revoked: true as const };
   });

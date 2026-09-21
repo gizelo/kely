@@ -14,6 +14,7 @@ import { artDirectionSchema } from "./art-direction";
 import { confirmPreference } from "./preferences";
 import { acceptAnalysis, analysisDerivative, applyAnalysis, listAnalyses, quoteAnalysis, readAnalysis } from "./brand-analysis";
 import { acceptCreation, cancelCreation, generateCreation, quoteCreation, quoteCreationRevision, readCreation, replyCreation } from "./creation";
+import { researchAnswerSchema, researchCorrectionSchema, researchService, researchStartSchema } from "./research-service";
 
 const uuid = z.uuid();
 const version = z.number().int().positive();
@@ -50,8 +51,20 @@ export async function handleApi(request: Request, path: string[]) {
     if (config.cloud && request.method !== "GET") await enforceRateLimit(`write:${user.id}`, 30);
     const [resource, id, action] = path;
     let result: unknown;
-    if (resource === "creations") {
-      if (id === "quote" && request.method === "POST") result = await quoteCreation(user, z.object({ idea: smallText, context: z.string().trim().max(1800).optional(), platform: z.enum(["linkedin", "instagram"]), slideCount: z.number().int().min(1).max(6).optional(), language: z.string().trim().max(40).optional(), sourceAnalysisId: uuid.optional(), analysisMaterialIds: z.array(uuid).max(3).optional() }).strict().parse(await body(request)));
+    if (resource === "research") {
+      if (!id && request.method === "POST") result = await researchService.start(user, researchStartSchema.parse(await body(request)));
+      else if (id) {
+        uuid.parse(id);
+        if (!action && request.method === "GET") result = await researchService.read(user.id, id);
+        else if (action === "answer" && request.method === "POST") result = await researchService.answer(user, id, researchAnswerSchema.parse(await body(request)));
+        else if (action === "correct" && request.method === "POST") result = await researchService.correct(user, id, researchCorrectionSchema.parse(await body(request)));
+      }
+    } else if (resource === "creations") {
+      if (id === "quote" && request.method === "POST") {
+        const input = z.object({ idea: smallText, context: z.string().trim().max(1800).optional(), platform: z.enum(["linkedin", "instagram"]), slideCount: z.number().int().min(1).max(6).optional(), language: z.string().trim().max(40).optional(), sourceAnalysisId: uuid.optional(), analysisMaterialIds: z.array(uuid).max(3).optional(), researchId: uuid, researchSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/u), brandProfileVersion: z.number().int().min(0) }).strict().parse(await body(request));
+        const { researchId, researchSnapshotHash, brandProfileVersion, ...creation } = input;
+        result = await quoteCreation(user, { ...creation, research: { researchId, researchSnapshotHash, brandProfileVersion } });
+      }
       else if (id === "accept" && request.method === "POST") {
         const input = z.object({ quoteId: uuid, requestKey: z.string().min(8).max(100) }).strict().parse(await body(request));
         result = await acceptCreation(user, input.quoteId, input.requestKey);

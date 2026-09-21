@@ -3,7 +3,7 @@ import { canonicalJson, inputHash } from "../paid-input";
 import { assessProviderUsage, providerMaximumMicros, providerRateSchedule } from "../providers/provider-envelope";
 import type { ProviderValidationIssue } from "../providers/image-envelope";
 import { changeStorageUsage, storageTransaction } from "../private-storage";
-import { BudgetError, boundedImageEvidence, boundedResponseEvidence, eventSchema, integrity, replayBudgetHistory, type AttemptInput, type BudgetIdentity, type BudgetState, type EventRow } from "./store";
+import { BudgetError, boundedImageEvidence, boundedResponseEvidence, eventSchema, integrity, replayBudgetHistory, type AttemptInput, type BudgetIdentity, type BudgetPackageInput, type BudgetState, type EventRow } from "./store";
 
 type Authority = { identity: BudgetIdentity; destination: string; active: boolean; imported_hash: string; imported_sequence: number; evidence_reserved_bytes: string };
 export type BudgetTransfer = { destination: string; hash: string; sequence: number; rows: EventRow[]; state: BudgetState };
@@ -36,6 +36,41 @@ export class CloudBudgetStore {
 
   inspect() { return this.#transaction(async (_client, state) => state); }
 
+  reservePackage(input: BudgetPackageInput) {
+    const detached = JSON.parse(canonicalJson(input)) as BudgetPackageInput;
+    const maximumMicros = detached.steps.reduce((sum, item) => sum + item.maximumMicros, 0);
+    const hash = inputHash(detached);
+    return this.#transaction(async (client, state, rows, authority) => {
+      integrity(authority.active);
+      const parsed = eventSchema.parse({ type: "package_reserved", input: detached, inputHash: hash, maximumMicros });
+      const prior = state.packages.find((item) => item.id === detached.id || (item.ownerId === detached.ownerId && item.operationId === detached.operationId));
+      if (prior) {
+        if (prior.inputHash !== hash) throw new BudgetError("attempt_conflict", "That package reservation already has different immutable inputs.");
+        return structuredClone(prior);
+      }
+      if (maximumMicros > state.availableMicros) throw new BudgetError("budget_exhausted", "The shared development budget cannot cover this complete package.");
+      await this.#append(client, rows, parsed);
+      return { ...detached, inputHash: hash, maximumMicros, remainingMicros: maximumMicros, status: "active" as const };
+    });
+  }
+
+  closePackage(input: { id: string; ownerId: string; operationId: string; scopeHash: string; outcome: "completed" | "released"; evidenceHash: string }) {
+    const event = eventSchema.parse({ type: "package_closed", ...input });
+    integrity(event.type === "package_closed");
+    return this.#transaction(async (client, state, rows, authority) => {
+      integrity(authority.active);
+      const value = state.packages.find((item) => item.id === event.id);
+      integrity(value && value.ownerId === event.ownerId && value.operationId === event.operationId && value.scopeHash === event.scopeHash);
+      if (value.status !== "active") {
+        if (value.status !== event.outcome || value.evidenceHash !== event.evidenceHash) throw new BudgetError("attempt_conflict", "That package was already closed with different durable evidence.");
+        return structuredClone(value);
+      }
+      if (state.attempts.some((attempt) => attempt.packageId === value.id && (attempt.status === "dispatching" || attempt.status === "uncertain"))) throw new BudgetError("attempt_uncertain", "This package has an in-flight or uncertain attempt and cannot release its reservation.");
+      await this.#append(client, rows, event);
+      return { ...value, status: event.outcome, remainingMicros: 0, evidenceHash: event.evidenceHash };
+    });
+  }
+
   claim(input: AttemptInput) {
     const detached = JSON.parse(canonicalJson(input)) as AttemptInput;
     const maximumMicros = providerMaximumMicros(detached.request);
@@ -48,7 +83,11 @@ export class CloudBudgetStore {
         return { dispatched: false, attempt: previous };
       }
       if (state.attempts.some((attempt) => attempt.status === "dispatching")) throw new BudgetError("dispatch_in_progress", "An existing provider attempt requires reconciliation.");
-      if (maximumMicros > state.availableMicros) throw new BudgetError("budget_exhausted", "The shared development budget cannot cover this request.");
+      if (detached.packageId) {
+        const value = state.packages.find((item) => item.id === detached.packageId);
+        const step = value?.steps.find((item) => item.step === detached.step);
+        if (!value || value.status !== "active" || value.ownerId !== detached.ownerId || value.operationId !== detached.operationId || !step || step.maximumMicros < maximumMicros || value.remainingMicros < maximumMicros) throw new BudgetError("budget_exhausted", "This request is not covered by its complete package reservation.");
+      } else if (maximumMicros > state.availableMicros) throw new BudgetError("budget_exhausted", "The shared development budget cannot cover this request.");
       integrity(Number(authority.evidence_reserved_bytes) === 0);
       await this.#append(client, rows, { type: "dispatching", input: detached, inputHash: hash, maximumMicros, rateSchedule: providerRateSchedule(detached.request) }, EVIDENCE_HEADROOM);
       await client.query("UPDATE cloud_budget_authority SET evidence_reserved_bytes=$1 WHERE singleton", [EVIDENCE_HEADROOM]);

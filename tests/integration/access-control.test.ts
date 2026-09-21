@@ -48,7 +48,7 @@ test("operator account creation and allowance grant/revoke are idempotent", asyn
   assert.equal(grant.granted, true);
   assert.equal((await accountView({ id: created.ownerId, name: "Kely Tester", email }, new Date("2026-09-21T12:00:00Z"))).billing.weeklyRemaining, 100);
   assert.equal((await grantTestAllowance({ email, tier: "starter", commandKey: `grant-${marker}` })).granted, false);
-  assert.equal((await revokeTestAllowance({ email, commandKey: `revoke-${marker}` })).revoked, true);
+  assert.equal((await revokeTestAllowance({ email, commandKey: `revoke-${marker}` }, new Date("2026-09-21T12:01:00Z"))).revoked, true);
   assert.equal((await accountView({ id: created.ownerId, name: "Kely Tester", email }, new Date("2026-09-21T12:01:00Z"))).billing.weeklyRemaining, 0);
   assert.equal((await revokeTestAllowance({ email, commandKey: `revoke-${marker}` })).revoked, false);
 });

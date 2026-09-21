@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applySelectedOriginals, shouldGenerateEditorialArtwork, suggestedSlideCount, type CreationInput } from "../src/server/creation-input";
+import { applySelectedOriginals, freezeCreationResearch, researchedPublicationPlan, shouldGenerateEditorialArtwork, suggestedSlideCount, verifyCreationInput, verifyCreationResearch, type CreationInput } from "../src/server/creation-input";
 import { inputHash } from "../src/server/paid-input";
 import type { FrozenBrand } from "../src/shared/brand";
 import type { PublicationView } from "../src/shared/contracts";
@@ -27,6 +27,21 @@ function brand(): FrozenBrand {
   return { ...value, hash: inputHash(value) };
 }
 
+function researchStrategy() {
+  return {
+    kind: "research_strategy" as const,
+    brandProfile: { facts: [], tone: [], palette: [], typography: [], composition: [], allowedMaterials: [], prohibitions: [] },
+    plan: {
+      platform: "linkedin" as const, format: "carousel" as const, slideCount: 2, purpose: "Explain the product", audience: "Founders", angle: "Save time",
+      slides: [
+        { index: 1, objective: "Hook", copy: "Stop scheduling manually", visualDirection: "Bold editorial opener", claimKeys: [], materialIds: [] },
+        { index: 2, objective: "Close", copy: "Coordinate in one place", visualDirection: "Simple closing card", claimKeys: [], materialIds: [] },
+      ],
+      caption: "A clearer way to coordinate.", cta: "Learn more", visualSystem: "High-contrast editorial cards",
+    },
+  };
+}
+
 test("selected originals enter the post-local art direction while references remain analysis-only", () => {
   const baseline = brand();
   const selected = applySelectedOriginals(baseline, [ids.reference, ids.logo, ids.screenshot]);
@@ -41,6 +56,7 @@ test("style references suppress generic image generation but a material-free fre
   const state = { artDirection: brand().art, brandBrief: brand().brief } as PublicationView;
   const base = { revision: undefined, analysis: null } as Pick<CreationInput, "revision" | "analysis">;
   assert.equal(shouldGenerateEditorialArtwork(base, state), true);
+  assert.equal(shouldGenerateEditorialArtwork({ ...base, schemaVersion: 16 }, state), false);
   assert.equal(shouldGenerateEditorialArtwork({ ...base, analysis: { selected: [{ id: ids.reference }] } as CreationInput["analysis"] }, state), false);
   state.artDirection!.direction.heroMaterialIds = [ids.screenshot];
   assert.equal(shouldGenerateEditorialArtwork(base, state), false);
@@ -50,4 +66,44 @@ test("the initial plan respects an explicit carousel size in the idea", () => {
   assert.equal(suggestedSlideCount("Create a 3-slide LinkedIn carousel."), 3);
   assert.equal(suggestedSlideCount("Сделай четыре слайда о продукте."), 4);
   assert.equal(suggestedSlideCount("Introduce our product in one post."), 1);
+});
+
+test("research-aware creation freezes the exact ready snapshot while legacy v15 remains valid", async () => {
+  const researchHash = "d".repeat(64);
+  const sourceHash = "e".repeat(64);
+  const client = {
+    async query(_sql: string, parameters: unknown[]) {
+      if (parameters[0] !== "owner-1" || parameters[1] !== "00000000-0000-4000-a000-000000000010") return { rows: [] };
+      return { rows: [{
+        run_id: parameters[1], snapshot_id: "00000000-0000-4000-a000-000000000011", snapshot_version: 2,
+        snapshot_hash: researchHash, status: "review_ready",
+        snapshot: { entityResolution: { status: "resolved", confidence: "high", candidateId: "girex" }, evidence: [{ id: "source-1", contentHash: sourceHash }], strategy: researchStrategy(), critic: { outcome: "pass", issues: [] } },
+      }] };
+    },
+  };
+  const research = await freezeCreationResearch(client as never, "owner-1", { researchId: "00000000-0000-4000-a000-000000000010", researchSnapshotHash: researchHash, brandProfileVersion: 1 });
+  assert.deepEqual(research.sourceHashes, [{ evidenceId: "source-1", contentHash: sourceHash }]);
+  await assert.rejects(verifyCreationResearch(client as never, "owner-1", { ...research, planHash: "0".repeat(64) }, 1), { code: "research_snapshot_changed" });
+  const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.deepEqual(mapped.slides.map((slide) => slide.title), ["Stop scheduling manually", "Coordinate in one place"]);
+  assert.equal(mapped.caption, "A clearer way to coordinate.");
+  const common = { ownerId: "owner-1", quoteId: "quote-1", origin: "ai_preview" as const, publication: {} as PublicationView, brand: brand(), business: {} as CreationInput["business"], analysis: null, credits: 30, format: {} as CreationInput["format"] };
+  const legacy = { ...common, schemaVersion: 15, policy: "plan-first-v1" } as const;
+  assert.equal(verifyCreationInput(legacy, inputHash(legacy)).schemaVersion, 15);
+  const current = { ...common, schemaVersion: 16, policy: "plan-first-v1", research } as const;
+  assert.equal(verifyCreationInput(current, inputHash(current)).research?.snapshotHash, researchHash);
+  assert.throws(() => verifyCreationInput({ ...legacy, schemaVersion: 16 }, inputHash({ ...legacy, schemaVersion: 16 }) as string), { code: "creation_snapshot_invalid" });
+  assert.throws(() => verifyCreationInput({ ...current, schemaVersion: 15 }, inputHash({ ...current, schemaVersion: 15 }) as string), { code: "creation_snapshot_invalid" });
+});
+
+test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {
+  const hash = "f".repeat(64);
+  const row = { run_id: "run", snapshot_id: "snapshot", snapshot_version: 1, snapshot_hash: hash, status: "review_ready", snapshot: { entityResolution: { status: "resolved", confidence: "high", candidateId: "entity" }, evidence: [], strategy: researchStrategy(), critic: { outcome: "pass", issues: [] } } };
+  const selection = { researchId: "00000000-0000-4000-a000-000000000020", researchSnapshotHash: hash, brandProfileVersion: 0 };
+  const client = (value: unknown) => ({ async query() { return { rows: value ? [value] : [] }; } });
+  await assert.rejects(freezeCreationResearch(client(null) as never, "foreign", selection), { code: "research_not_found" });
+  await assert.rejects(freezeCreationResearch(client({ ...row, snapshot_hash: "a".repeat(64) }) as never, "owner", selection), { code: "research_snapshot_changed" });
+  await assert.rejects(freezeCreationResearch(client({ ...row, status: "partial" }) as never, "owner", selection), { code: "research_not_ready" });
+  await assert.rejects(freezeCreationResearch(client({ ...row, snapshot: { ...row.snapshot, entityResolution: { ...row.snapshot.entityResolution, confidence: "medium" } } }) as never, "owner", selection), { code: "research_identity_unconfirmed" });
+  await assert.rejects(freezeCreationResearch(client({ ...row, snapshot: { ...row.snapshot, strategy: undefined } }) as never, "owner", selection), { code: "research_plan_invalid" });
 });

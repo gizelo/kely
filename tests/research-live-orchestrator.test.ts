@@ -1,0 +1,78 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import sharp from "sharp";
+import { researchPackageInput } from "../src/server/budget/research-package";
+import type { BrandEvidenceRecord, BrandIntelligenceSnapshot } from "../src/shared/brand-intelligence";
+import type { ResearchRunView, ResearchStatus } from "../src/server/brand-intelligence-store";
+import { runLiveResearch } from "../src/server/research-live-orchestrator";
+import { analysisRequest, previewAnalysisResponse, type AnalysisInput } from "../src/server/providers/analysis";
+
+const runId = "00000000-0000-4000-8000-000000000001";
+const reservation = researchPackageInput("owner", runId, "a".repeat(64));
+function view(): ResearchRunView { return { id: runId, ownerId: "owner", commandKey: "command-1", inputHash: "a".repeat(64), input: {}, supersedesRunId: null, status: "queued", statusDetail: {}, createdAt: new Date().toISOString(), sources: [], snapshots: [] }; }
+function raw(value: unknown) { return { output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] }] }; }
+const strategy = { kind: "research_strategy", brandProfile: { facts: [], tone: [], palette: [], typography: [], composition: [], allowedMaterials: [], prohibitions: [] }, plan: { platform: "linkedin", format: "single", slideCount: 1, purpose: "Introduce Acme", audience: "Salon owners", angle: "Simple scheduling", slides: [{ index: 1, objective: "Introduce", copy: "Meet Acme", visualDirection: "Clean product-led composition", claimKeys: [], materialIds: [] }], caption: "Meet Acme.", cta: "Learn more", visualSystem: "Clear and restrained" } } as const;
+
+test("full durable pipeline uses one package, one critic and reaches review_ready", async () => {
+  const run = view(); const statuses: ResearchStatus[] = []; const persisted: BrandEvidenceRecord[] = []; const snapshots: BrandIntelligenceSnapshot[] = []; const steps: string[] = []; let closed = 0;
+  const official: BrandEvidenceRecord = { id: "10000000-0000-4000-8000-000000000001", sourceKind: "website", sourceRole: "official", sourceUrl: "https://acme.example/", excerpt: "Acme scheduling", span: { start: 0, end: 15 }, contentHash: "b".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" };
+  const result = await runLiveResearch("owner", runId, { businessName: "Acme", idea: "Launch", platform: "linkedin", userSuppliedUrls: ["https://acme.example/"] }, reservation, {
+    store: { async read() { return run; }, async appendStatus(_o, _i, status, detail = {}) { statuses.push(status); run.status = status; run.statusDetail = detail; return run; }, async addSource(_o, _i, evidence) { persisted.push(evidence); return run; }, async acceptSnapshot(_o, _i, snapshot) { snapshots.push(snapshot); return { id: "snapshot", version: 1, hash: "c".repeat(64) }; } },
+    async verifyReservation(value) { assert.equal(value.id, reservation.id); },
+    async search(input) { assert.equal(input.reservation?.id, reservation.id); return { candidates: [{ id: "acme", displayName: "Acme", canonicalUrl: "https://acme.example/", evidenceIds: [], signals: { userSuppliedUrl: true, officialSiteClaim: false, exactNameMatch: true, crossLinkedProfile: false } }, { id: "other", displayName: "Other Acme", canonicalUrl: "https://other.example/", evidenceIds: [], signals: { userSuppliedUrl: false, officialSiteClaim: false, exactNameMatch: false, crossLinkedProfile: false } }], evidence: [], replayed: false, assessment: {} }; },
+    async acquire() { return { evidence: [official], outcomes: [{ url: official.sourceUrl, role: "official", kind: "website", status: "complete" }] }; },
+    gateway: { async dispatch(attempt) { assert.equal(attempt.packageId, reservation.id); steps.push(attempt.step); if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
+    async closeFromDurableEvidence(saved) { assert.equal(saved.status, "review_ready"); closed += 1; },
+  });
+  assert.equal(result.status, "review_ready"); assert.deepEqual(steps, ["extract:0", "strategy:0", "check:0"]); assert.equal(closed, 1); assert.equal(snapshots.length, 1);
+  assert.deepEqual(snapshots[0].entityCandidates.find((item) => item.id === "other")?.evidenceIds, []);
+  assert.deepEqual(statuses, ["resolving", "fetching", "extracting", "strategizing", "checking", "review_ready"]);
+});
+
+test("unverified package stops before dispatch and unknown outcome is never closed", async () => {
+  const run = view(); let calls = 0;
+  await assert.rejects(runLiveResearch("owner", runId, { businessName: "Acme", idea: "Launch", platform: "linkedin", userSuppliedUrls: [] }, reservation, { store: { async read() { return run; }, async appendStatus() { calls += 1; return run; }, async addSource() { calls += 1; return run; }, async acceptSnapshot() { calls += 1; return { id: "x", version: 1, hash: "x" }; } }, async verifyReservation() { throw new Error("not reserved"); }, async search() { calls += 1; throw new Error("no"); }, gateway: { async dispatch() { calls += 1; throw new Error("no"); } }, async closeFromDurableEvidence() { calls += 1; } }), /not reserved/u);
+  assert.equal(calls, 0);
+});
+
+test("name-only resolution promotes one locally proven host but keeps same-name ties ambiguous", async () => {
+  for (const ambiguous of [false, true]) {
+    const run = view(); const snapshots: BrandIntelligenceSnapshot[] = []; const calls: string[] = [];
+    const candidates = [
+      { id: "acme-one", displayName: "Acme", canonicalUrl: "https://one.example/", evidenceIds: [], signals: { userSuppliedUrl: false, officialSiteClaim: false, exactNameMatch: false, crossLinkedProfile: false } },
+      { id: "acme-two", displayName: ambiguous ? "Acme" : "Different Company", canonicalUrl: "https://two.example/", evidenceIds: [], signals: { userSuppliedUrl: false, officialSiteClaim: false, exactNameMatch: false, crossLinkedProfile: false } },
+    ];
+    const evidence = candidates.map((candidate, index) => ({ id: `20000000-0000-4000-8000-00000000000${index + 1}`, sourceKind: "website" as const, sourceRole: "external_context" as const, sourceUrl: candidate.canonicalUrl, excerpt: `${candidate.displayName} scheduling`, span: { start: 0, end: 15 }, contentHash: "d".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" }));
+    const result = await runLiveResearch("owner", runId, { businessName: "Acme", idea: "Launch", platform: "linkedin", userSuppliedUrls: [] }, reservation, {
+      store: { async read() { return run; }, async appendStatus(_o, _i, status, detail = {}) { run.status = status; run.statusDetail = detail; return run; }, async addSource() { return run; }, async acceptSnapshot(_o, _i, snapshot) { snapshots.push(snapshot); return { id: "snapshot", version: 1, hash: "c".repeat(64) }; } },
+      async verifyReservation() {},
+      async search() { return { candidates, evidence: [], replayed: false, assessment: {} }; },
+      async acquire() { return { evidence, outcomes: candidates.map((candidate, index) => ({ url: candidate.canonicalUrl, role: "external_context" as const, kind: "website" as const, candidateId: candidate.id, status: "complete" as const, identity: { exactNameMatch: index === 0 || ambiguous, canonicalSameHost: true, linkedSocialProfile: index === 0 } })) }; },
+      gateway: { async dispatch(attempt) { calls.push(attempt.step); if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
+      async closeFromDurableEvidence() {},
+    });
+    assert.equal(result.status, ambiguous ? "needs_input" : "review_ready");
+    assert.equal(snapshots[0].entityResolution.status, ambiguous ? "ambiguous" : "resolved");
+    assert.deepEqual(calls, ambiguous ? ["extract:0"] : ["extract:0", "strategy:0", "check:0"]);
+    if (!ambiguous) assert.equal(snapshots[0].evidence.filter((item) => item.sourceRole === "official").every((item) => new URL(item.sourceUrl).hostname === "one.example"), true);
+  }
+});
+
+test("optional materials use one package-bound vision call and persist observations", async () => {
+  const materialId = "00000000-0000-4000-8000-000000000099";
+  const materialReservation = researchPackageInput("owner", runId, "a".repeat(64), [materialId]);
+  const image = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#5522AA" } }).jpeg().toBuffer();
+  const materialInput: AnalysisInput = { guidance: "Launch", rules: { audience: "Owners", palette: null, headlines: "default" }, selected: [{ id: materialId, label: "Reference", role: "reference", version: 1, originalHash: "e".repeat(64), derivativeHash: "f".repeat(64), width: 16, height: 16, dataUrl: `data:image/jpeg;base64,${image.toString("base64")}` }] };
+  const run = view(); const calls: string[] = []; let persisted = 0;
+  const official: BrandEvidenceRecord = { id: "30000000-0000-4000-8000-000000000001", sourceKind: "website", sourceRole: "official", sourceUrl: "https://acme.example/", excerpt: "Acme scheduling", span: { start: 0, end: 15 }, contentHash: "b".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" };
+  const result = await runLiveResearch("owner", runId, { businessName: "Acme", idea: "Launch", platform: "linkedin", userSuppliedUrls: ["https://acme.example/"] }, materialReservation, {
+    store: { async read() { return run; }, async appendStatus(_o, _i, status, detail = {}) { run.status = status; run.statusDetail = detail; return run; }, async addSource() { return run; }, async acceptSnapshot() { return { id: "snapshot", version: 1, hash: "c".repeat(64) }; } },
+    async verifyReservation() {}, materialInput,
+    async persistMaterialAnalysis(proposal) { persisted = proposal.observations.length; },
+    async search() { return { candidates: [{ id: "acme", displayName: "Acme", canonicalUrl: "https://acme.example/", evidenceIds: [], signals: { userSuppliedUrl: true, officialSiteClaim: false, exactNameMatch: true, crossLinkedProfile: false } }], evidence: [], replayed: false, assessment: {} }; },
+    async acquire() { return { evidence: [official], outcomes: [{ url: official.sourceUrl, role: "official", kind: "website", status: "complete" }] }; },
+    gateway: { async dispatch(attempt) { calls.push(attempt.step); assert.equal(attempt.packageId, materialReservation.id); if (attempt.step === "materials:0") return { response: previewAnalysisResponse(analysisRequest(materialInput, "brand-analysis-v2"), "research-material"), assessment: {}, replayed: false }; if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
+    async closeFromDurableEvidence() {},
+  });
+  assert.equal(result.status, "review_ready"); assert.equal(persisted, 1); assert.deepEqual(calls, ["materials:0", "extract:0", "strategy:0", "check:0"]);
+});

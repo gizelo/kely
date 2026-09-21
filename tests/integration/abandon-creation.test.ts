@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import { pool } from "../../src/server/db";
 import { getBoss } from "../../src/server/queue";
 import { accountView, simulateBilling, type Viewer } from "../../src/server/credits";
-import { acceptCreation, quoteCreation, readCreation } from "../../src/server/creation";
+import { acceptCreation, generateCreation, quoteCreation, readCreation } from "../../src/server/creation";
 import { runCreation } from "../../src/server/creation-runner";
 import { BudgetStore } from "../../src/server/budget/store";
 import { FakeProviderGateway } from "../../src/server/providers/gateway";
@@ -46,6 +46,10 @@ async function lost(unsupportedModel = false) {
   const { accountingPolicy: _policy, ...wire } = buildImageRequest("An original editorial bakery illustration, no text") as ReturnType<typeof buildImageRequest> & { accountingPolicy: string };
   const step = { acceptedHash: operation.input_hash, snapshot: { historical: "isolated legacy saved artwork step" }, request: validateImageRequest({ ...wire, model: unsupportedModel ? IMAGE_MODEL_V2 : "gpt-image-1.5" }) };
   await pool.query("INSERT INTO creation_step(operation_id,step_key,input,input_hash) VALUES($1,'artwork:0',$2,$3)", [accepted.operationId, JSON.stringify(step), inputHash(step)]);
+  await runCreation(accepted.operationId, { gateway });
+  const planned = await readCreation(user.id, quoted.publication.id);
+  const plan = planned.creation.plan!;
+  await generateCreation(user, quoted.publication.id, { version: planned.publication.version, planVersion: plan.version, planHash: plan.hash, requestKey: randomUUID() });
   await runCreation(accepted.operationId, { gateway });
   return { user, quoted, accepted, target: { ownerId: user.id, operationId: accepted.operationId, requestId }, get budget() { return budget; }, get gateway() { return gateway; }, get sends() { return sends; }, reopen() { budget.close(); budget = new BudgetStore(location); gateway = new FakeProviderGateway(budget, transport); }, close() { budget.close(); rmSync(directory, { recursive: true, force: true }); } };
 }

@@ -18,7 +18,7 @@ export async function autoSaveDurableRevisionPreferences(
 ) {
   const proposals = state.preferenceProposals ?? [];
   if (state.status !== "ready" || state.creation?.status !== "ready") return;
-  const durable = proposals.filter((proposal) => proposal.scope === "durable" && proposal.messageId === revisionMessageId && proposal.evidence === revisionInstruction);
+  const durable = proposals.filter((proposal) => proposal.scope === "durable" && proposal.messageId === revisionMessageId && revisionInstruction.includes(proposal.evidence));
   const duplicateFields = new Set(durable.filter((proposal, index) => durable.some((other, otherIndex) => otherIndex !== index && other.field === proposal.field)).map((proposal) => proposal.field));
   const eligible = durable.filter((proposal) => {
     const evidence = state.messages.find((message) => message.id === proposal.messageId && message.role === "user");

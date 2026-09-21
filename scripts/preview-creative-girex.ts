@@ -9,8 +9,8 @@ async function main() {
 const source = resolve(".local/benchmarks/girex-source-2026-09-11");
 const destination = resolve(".local/benchmarks/girex-creative-geometry-2026-09-11");
 const files = [
-  { id: "bd1f5082-320e-4867-ab23-24b1baf5b1fa", file: "glass-cubes.png" },
   { id: "d56a3cce-4881-4632-82a2-9879c2029afb", file: "desktop-interface.png" },
+  { id: "33200f9a-d05e-46f1-8f30-87e642516ee6", file: "phone-interface.png" },
 ];
 const originals = await Promise.all(files.map(async ({ id, file }) => {
   const bytes = await readFile(resolve(source, file));
@@ -27,9 +27,9 @@ const art = {
   originals: originals.map(({ bytes: _bytes, ...metadata }) => metadata),
 };
 const slides: { title: string; body: string; plan: CreativePlan }[] = [
-  { title: "A closer look\nat Girex.", body: "From visual identity to the product interface.", plan: { purpose: "hook", recipe: "graphic-stage", materialId: files[0].id, heading: "large", background: "background", alignment: "left", rationale: "Introduce the visual language with the supplied glass graphic." } },
-  { title: "Inside the\ninterface.", body: "A look at the desktop design. Shown values are part of the source screenshot, not a current offer.", plan: { purpose: "proof", recipe: "image-evidence", materialId: files[1].id, heading: "medium", background: "background", alignment: "left", rationale: "Show the intact interface as visual evidence, separate from decoration." } },
-  { title: "Follow what\ncomes next.", body: "More looks at Girex and its design.", plan: { purpose: "closing", recipe: "closing", materialId: "", heading: "large", background: "foreground", alignment: "center", rationale: "End with a quiet typographic invitation instead of repeating the cover." } },
+  { title: "Meet Girex.", body: "Manage wallets. Explore crypto. One interface for both.", plan: { purpose: "hook", recipe: "type-poster", materialId: "", heading: "large", background: "background", alignment: "left", rationale: "Open with a restrained product statement and no invented symbols." } },
+  { title: "Inside the\ninterface.", body: "A look at the desktop design. Shown values are part of the source screenshot, not a current offer.", plan: { purpose: "proof", recipe: "image-evidence", materialId: files[0].id, heading: "medium", background: "background", alignment: "left", rationale: "Show the intact interface as visual evidence, separate from decoration." } },
+  { title: "Explore Girex\non mobile.", body: "See the phone interface, then explore the concept at girex.io.", plan: { purpose: "closing", recipe: "split-proof", materialId: files[1].id, heading: "medium", background: "background", alignment: "left", rationale: "Close with the supplied phone interface and a direct, restrained invitation." } },
 ];
 await mkdir(destination, { recursive: true });
 const evidence = [];

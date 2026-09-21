@@ -29,8 +29,8 @@ export interface SourceAcquisitionOutcome {
 }
 
 export type ResolvedAddress = { address: string; family: number };
-type FetchResult = { contentType: string; bytes: Buffer };
-type AcquisitionDependencies = {
+export type FetchResult = { contentType: string; bytes: Buffer };
+export type AcquisitionDependencies = {
   resolve?: (hostname: string) => Promise<ResolvedAddress[]>;
   fetch?: (url: URL, addresses: ResolvedAddress[], limit: number) => Promise<FetchResult>;
 };
@@ -82,7 +82,7 @@ export function assertPublicResolution(addresses: ResolvedAddress[]) {
   requireCondition(addresses.length > 0 && addresses.length <= 16 && addresses.every((item) => (item.family === 4 || item.family === 6) && isPublicAddress(item.address)), "unsafe_source", "That source does not resolve only to public internet addresses.", 422);
 }
 
-async function resolvePublic(hostname: string) {
+export async function resolvePublic(hostname: string) {
   let addresses: ResolvedAddress[];
   try { addresses = await dnsLookup(hostname, { all: true, verbatim: true }); }
   catch { throw new AppError("source_unavailable", "Kely could not resolve that public source. Upload screenshots instead.", 422); }

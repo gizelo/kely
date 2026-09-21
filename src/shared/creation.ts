@@ -8,7 +8,7 @@ export interface CreationView {
   canReply: boolean;
   operationId?: string;
   quote?: CreationQuoteView;
-  plan?: { version: number; hash: string; approved: boolean; visualDirection: string; approvalRequestKey?: string; approvedPublicationVersion?: number };
+  plan?: { version: number; hash: string; approved: boolean; visualDirection: string; researchPlanHash?: string; approvalRequestKey?: string; approvedPublicationVersion?: number };
   discussionLimitReached?: boolean;
   artworkLayout?: "landscape-editorial-v1";
   cancelled?: boolean;
