@@ -83,3 +83,15 @@ test("stored mode is reported honestly and accepts at most three material ids", 
     assert.throws(() => researchStartSchema.parse({ ...valid("too-many-materials"), materialIds: Array.from({ length: 4 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`) }));
   } finally { if (previous === undefined) delete process.env.KELY_RESEARCH_MODE; else process.env.KELY_RESEARCH_MODE = previous; }
 });
+
+test("cloud live research is enqueued and returns its durable queued run immediately", async () => {
+  const previous = process.env.KELY_RESEARCH_MODE; process.env.KELY_RESEARCH_MODE = "openai";
+  try {
+    const store = new FakeStore(); const queued: string[] = []; let executed = 0;
+    const service = new ResearchService(store, async () => {}, async (_viewer, run) => { executed += 1; return run; }, async (_ownerId, runId) => { queued.push(runId); });
+    const created = await service.start(viewer, valid("queued-live-command"));
+    assert.equal(created.status, "queued");
+    assert.deepEqual(queued, [created.id]);
+    assert.equal(executed, 0);
+  } finally { if (previous === undefined) delete process.env.KELY_RESEARCH_MODE; else process.env.KELY_RESEARCH_MODE = previous; }
+});

@@ -81,13 +81,19 @@ async function simulate(store: ResearchStore, ownerId: string, run: ResearchRunV
 }
 
 export class ResearchService {
-  constructor(private readonly store: ResearchStore = new BrandIntelligenceStore(pool), private readonly entitlement: (viewer: Viewer) => Promise<void> = async (viewer) => transaction(async (client) => requireEntitlement(client, await lockWallet(client, viewer.id))), private readonly liveExecutor: ((viewer: Viewer, run: ResearchRunView, input: DurableResearchInput) => Promise<ResearchRunView>) | null = defaultLiveExecutor) {}
+  constructor(private readonly store: ResearchStore = new BrandIntelligenceStore(pool), private readonly entitlement: (viewer: Viewer) => Promise<void> = async (viewer) => transaction(async (client) => requireEntitlement(client, await lockWallet(client, viewer.id))), private readonly liveExecutor: ((viewer: Viewer, run: ResearchRunView, input: DurableResearchInput) => Promise<ResearchRunView>) | null = defaultLiveExecutor, private readonly enqueueLive?: (ownerId: string, runId: string) => Promise<void>) {}
+
+  private async beginLive(viewer: Viewer, run: ResearchRunView, durable: DurableResearchInput) {
+    requireCondition(this.liveExecutor, "research_dispatch_unavailable", "Live research is not configured.", 503);
+    if (this.enqueueLive) { await this.enqueueLive(viewer.id, run.id); return publicView(run, "openai"); }
+    return publicView(await this.liveExecutor(viewer, run, durable), "openai");
+  }
 
   async start(viewer: Viewer, raw: unknown) {
     const selectedMode = mode(); const input = researchStartSchema.parse(raw); await this.entitlement(viewer);
     const durable: DurableResearchInput = { type: "start", researchMode: selectedMode, research: { businessName: input.businessName, category: input.category, location: input.location, idea: input.idea, platform: input.platform, userSuppliedUrls: input.userSuppliedUrls }, materialIds: input.materialIds };
     const run = await this.store.start(viewer.id, durable, input.commandKey);
-    if (selectedMode === "openai") { requireCondition(this.liveExecutor, "research_dispatch_unavailable", "Live research is not configured.", 503); return publicView(await this.liveExecutor(viewer, run, durable), "openai"); }
+    if (selectedMode === "openai") return this.beginLive(viewer, run, durable);
     return simulate(this.store, viewer.id, run, durable);
   }
 
@@ -98,7 +104,7 @@ export class ResearchService {
     requireCondition(parent.status === "needs_input" || parent.status === "partial", "research_answer_unavailable", "This research run is not waiting for an answer.", 409);
     const durable: DurableResearchInput = { ...prior, type: "answer", researchMode: selectedMode, answers: input.answers };
     const run = await this.store.start(viewer.id, durable, input.commandKey, parent.id);
-    if (selectedMode === "openai") { requireCondition(this.liveExecutor, "research_dispatch_unavailable", "Live research is not configured.", 503); return publicView(await this.liveExecutor(viewer, run, durable), "openai"); }
+    if (selectedMode === "openai") return this.beginLive(viewer, run, durable);
     return simulate(this.store, viewer.id, run, durable);
   }
 
@@ -107,7 +113,7 @@ export class ResearchService {
     const { commandKey: key, ...correction } = input;
     const durable: DurableResearchInput = { ...prior, type: "correct", researchMode: selectedMode, research: { ...prior.research, ...correction } };
     const run = await this.store.start(viewer.id, durable, key, parent.id);
-    if (selectedMode === "openai") { requireCondition(this.liveExecutor, "research_dispatch_unavailable", "Live research is not configured.", 503); return publicView(await this.liveExecutor(viewer, run, durable), "openai"); }
+    if (selectedMode === "openai") return this.beginLive(viewer, run, durable);
     return simulate(this.store, viewer.id, run, durable);
   }
 }
@@ -151,4 +157,14 @@ async function defaultLiveExecutor(viewer: Viewer, run: ResearchRunView, durable
   } finally { if (!config.cloud && "close" in budget) budget.close(); }
 }
 
-export const researchService = new ResearchService();
+export async function runResearchJob(ownerId: string, runId: string) {
+  const store = new BrandIntelligenceStore(pool);
+  const run = await store.read(ownerId, runId);
+  if (run.status !== "queued") return;
+  await defaultLiveExecutor({ id: ownerId, name: "", email: "" }, run, inputFromRun(run));
+}
+
+export const researchService = new ResearchService(undefined, undefined, defaultLiveExecutor, async (ownerId, runId) => {
+  const { enqueueResearch } = await import("./queue");
+  await enqueueResearch(ownerId, runId);
+});
