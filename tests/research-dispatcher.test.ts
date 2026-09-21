@@ -43,6 +43,14 @@ test("dispatcher accepts only cited HTTPS candidates and returns external contex
   assert.deepEqual(result.evidence[0].span, { start: 0, end: result.evidence[0].excerpt.length });
 });
 
+test("dispatcher accepts an explicitly supplied canonical URL when search cites a page on that business", async () => {
+  const output = { kind: "entity_discovery", candidates: [{ id: "girex", displayName: "Girex", canonicalUrl: "https://girex.io/", citations: [{ url: "https://girex.io/legal/user-agreement.html", excerpt: "Girex Technologies provides the platform." }] }] };
+  const searchResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex girex.io", sources: [{ type: "url", url: "https://girex.io/legal/user-agreement.html" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
+  const result = await dispatchEntitySearch({ async dispatch() { return { response: searchResponse, assessment: {}, replayed: false }; } }, reservedInput);
+  assert.equal(result.candidates[0].canonicalUrl, "https://girex.io/");
+  assert.equal(result.candidates[0].signals.userSuppliedUrl, true);
+});
+
 test("unreturned citations and model-controlled official signals fail closed", async () => {
   const parsed = { kind: "entity_discovery", candidates: [{ id: "girex", displayName: "Girex", canonicalUrl: "https://girex.io", citations: [{ url: "https://invented.example", excerpt: "Invented citation" }] }] };
   const untrusted = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.io" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(parsed) }] }] });
