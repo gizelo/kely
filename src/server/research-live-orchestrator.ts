@@ -3,7 +3,7 @@ import type { BudgetPackageInput } from "./budget/store";
 import type { BrandIntelligenceSnapshot, BrandResearchInput, EntityCandidate } from "../shared/brand-intelligence";
 import type { ResearchRunView, ResearchStatus, SourceOutcome } from "./brand-intelligence-store";
 import { assembleResearchContext } from "./brand-intelligence-context";
-import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot } from "./brand-intelligence";
+import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot, evidenceRecordFromSpan } from "./brand-intelligence";
 import { acquireResearchSources, type ResearchAcquisitionResult, type ResearchSourceSeed } from "./research-source-acquisition";
 import type { EntitySearchInput, EntitySearchResult } from "./providers/research-dispatcher";
 import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyStageResponse, strategyStageAttempt } from "./providers/research-stages";
@@ -50,9 +50,11 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
   exactReservation(reservation, ownerId, runId); await dependencies.verifyReservation(reservation);
   const current = await dependencies.store.read(ownerId, runId);
   if (current.status !== "queued") return current;
+  const initialEvidence = current.sources.map(({ outcome: _outcome, ...item }) => item);
   await dependencies.store.appendStatus(ownerId, runId, "resolving", { packageId: reservation.id });
   try {
     let materialAnalysis: AnalysisProposal | null = null;
+    const materialEvidence: EntitySearchResult["evidence"] = [];
     if (dependencies.materialInput) {
       if (!reservation.steps.some((item) => item.step === "materials:0" && item.maximumMicros === 532_373)) throw new Error("research_material_reservation_invalid");
       if (!dependencies.persistMaterialAnalysis) throw new Error("research_material_persistence_unavailable");
@@ -60,9 +62,21 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
       const reply = await dependencies.gateway.dispatch(bindResearchAttempt({ key: `kely:${runId}:materials:0`, ownerId, operationId: runId, step: "materials:0", snapshot: { acceptedHash: inputHash(dependencies.materialInput), input: dependencies.materialInput }, request }, reservation));
       materialAnalysis = parseAnalysis(reply.response, dependencies.materialInput, "brand-analysis-v2");
       await dependencies.persistMaterialAnalysis(materialAnalysis, inputHash(request));
+      for (const observation of materialAnalysis.observations) {
+        const evidence = evidenceRecordFromSpan({
+          id: observation.materialId,
+          sourceKind: "upload",
+          sourceRole: "user_provided",
+          sourceUrl: `https://kely.invalid/material/${observation.materialId}`,
+          content: observation.evidence,
+          span: { start: 0, end: observation.evidence.length },
+          fetchedAt: new Date().toISOString(),
+        });
+        materialEvidence.push(evidence);
+        await dependencies.store.addSource(ownerId, runId, evidence, "complete");
+      }
     } else if (reservation.steps.some((item) => item.step === "materials:0")) throw new Error("research_material_reservation_unexpected");
     const first = await dependencies.search({ ownerId, runId, businessName: input.businessName, category: input.category, location: input.location, userSuppliedUrls: input.userSuppliedUrls, searchNumber: 1, fetchedAt: new Date().toISOString(), reservation });
-    const initialEvidence = current.sources.map(({ outcome: _outcome, ...item }) => item);
     const candidates = [...first.candidates]; const discoveredEvidence = [...first.evidence];
     if (!candidates.length) {
       const second = await dependencies.search({ ownerId, runId, businessName: input.businessName, category: input.category, location: input.location, userSuppliedUrls: input.userSuppliedUrls, searchNumber: 2, fetchedAt: new Date().toISOString(), reservation });
@@ -83,7 +97,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     const userOfficialEvidence = acquired.evidence.filter((item) => item.sourceRole === "official" && userOfficialHosts.has(new URL(item.sourceUrl).hostname));
     const ids = new Set([...initialEvidence, ...discoveredEvidence].map((item) => item.id)); const acquiredEvidence = [...userOfficialEvidence, ...selectedEvidence].filter((item) => !ids.has(item.id));
     for (const evidence of acquiredEvidence) await dependencies.store.addSource(ownerId, runId, evidence, "complete");
-    const evidence = [...initialEvidence, ...discoveredEvidence, ...acquiredEvidence];
+    const evidence = [...initialEvidence, ...materialEvidence, ...discoveredEvidence, ...acquiredEvidence];
     await dependencies.store.appendStatus(ownerId, runId, "extracting", { evidence: evidence.length });
     const context = stageContext({ research: assembleResearchContext(input, evidence), materialObservations: materialAnalysis?.observations ?? [], materialDirection: materialAnalysis?.direction ?? null, materialLimitations: materialAnalysis?.limitations ?? [] });
     const extractionRaw = await dependencies.gateway.dispatch(extractionStageAttempt({ ownerId, runId, context, reservation }));
