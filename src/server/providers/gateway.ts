@@ -36,7 +36,7 @@ class ProviderGateway {
     let receivedEvidence: unknown;
     try {
       response = await Promise.race([
-        Promise.resolve().then(() => this.transport.send(structuredClone(claim.attempt.request), { attemptKey: claim.attempt.key, signal: controller.signal, receivedEvidence: (evidence) => { receivedEvidence = evidence; } })),
+        Promise.resolve().then(() => this.transport.send(claim.attempt.request, { attemptKey: claim.attempt.key, signal: controller.signal, receivedEvidence: (evidence) => { receivedEvidence = evidence; } })),
         new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; controller.abort(); reject(new Error("timeout")); }, "prompt" in claim.attempt.request ? 180_000 : this.timeoutMs); }),
       ]);
     } catch (error) {
