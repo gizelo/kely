@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { researchPackageInput } from "../src/server/budget/research-package";
 import type { BrandEvidenceRecord, BrandIntelligenceSnapshot } from "../src/shared/brand-intelligence";
 import type { ResearchRunView, ResearchStatus } from "../src/server/brand-intelligence-store";
-import { materialObservationEvidence, runLiveResearch } from "../src/server/research-live-orchestrator";
+import { materialObservationContext, materialObservationEvidence, runLiveResearch } from "../src/server/research-live-orchestrator";
 import { analysisRequest, previewAnalysisResponse, type AnalysisInput } from "../src/server/providers/analysis";
 
 const runId = "00000000-0000-4000-8000-000000000001";
@@ -14,13 +14,18 @@ function raw(value: unknown) { return { output: [{ type: "message", content: [{ 
 const strategy = { kind: "research_strategy", brandProfile: { facts: [], tone: [], palette: [], typography: [], composition: [], allowedMaterials: [], prohibitions: [] }, plan: { platform: "linkedin", format: "single", slideCount: 1, purpose: "Introduce Acme", audience: "Salon owners", angle: "Simple scheduling", slides: [{ index: 1, objective: "Introduce", copy: "Meet Acme", visualDirection: "Clean product-led composition", claimKeys: [], materialIds: [] }], caption: "Meet Acme.", cta: "Learn more", visualSystem: "Clear and restrained" } } as const;
 
 test("material observations are split to the durable evidence limit with run-scoped stable IDs", () => {
-  const content = "a".repeat(1000);
+  const content = `${"a".repeat(499)}😀${"b".repeat(500)}`;
   const first = materialObservationEvidence(runId, "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
   const repeated = materialObservationEvidence(runId, "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
   const nextRun = materialObservationEvidence("00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");
-  assert.deepEqual(first.map((item) => item.excerpt.length), [500, 500]);
+  assert.equal(first.every((item) => item.excerpt.length <= 500 && [...item.excerpt].length <= 500), true);
+  assert.equal(first.map((item) => item.excerpt).join(""), content);
+  assert.deepEqual(first.map((item) => item.span), [{ start: 0, end: 499 }, { start: 499, end: 999 }, { start: 999, end: 1001 }]);
+  assert.equal(first.every((item) => /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(item.id)), true);
   assert.deepEqual(first.map((item) => item.id), repeated.map((item) => item.id));
   assert.notDeepEqual(first.map((item) => item.id), nextRun.map((item) => item.id));
+  const observation = { materialId: "00000000-0000-4000-8000-000000000099", evidence: content, purpose: "reference" as const, confidence: "high" as const };
+  assert.deepEqual(materialObservationContext([observation], first)[0].evidenceIds, first.map((item) => item.id));
 });
 
 test("full durable pipeline uses one package, one critic and reaches review_ready", async () => {

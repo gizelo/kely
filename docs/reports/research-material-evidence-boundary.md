@@ -6,14 +6,15 @@ The first post-worker-memory live Girex run completed its paid material analysis
 
 ## Change
 
-- Material observations are split into lossless 500-character evidence spans before persistence.
-- Evidence IDs are deterministic for a run, material and span index.
+- Material observations are split into lossless, Unicode-safe 500-character evidence spans before persistence.
+- Evidence IDs are deterministic RFC 4122 variant UUIDv5 values for a run, material and span index.
 - Reusing the same material in another research run produces different IDs, avoiding the globally unique source-ID collision.
+- Extraction receives the exact evidence IDs for every material observation instead of being invited to cite the file ID.
 - The stored material analysis remains unchanged; only its evidence projection is chunked.
 
 ## Verification
 
-- Focused orchestration tests cover the exact 1,000-character boundary, stable replay IDs and distinct IDs across runs.
+- Focused orchestration tests cover an emoji on the 500-character boundary, exact reconstruction and spans, UUID validity, extraction attribution, stable replay IDs and distinct IDs across runs.
 - Full unit suite, typecheck and production build are required before deployment.
 - No provider call was made to diagnose or verify this change.
 

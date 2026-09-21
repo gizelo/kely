@@ -48,13 +48,27 @@ function normalizedEntityName(value: string) {
 
 export function materialObservationEvidence(runId: string, materialId: string, content: string, fetchedAt: string) {
   const records: BrandEvidenceRecord[] = [];
-  for (let start = 0, index = 0; start < content.length; start += 500, index += 1) {
-    const end = Math.min(content.length, start + 500);
-    const hex = createHash("sha256").update(`${runId}:material:${materialId}:${index}`, "utf8").digest("hex").slice(0, 32);
+  for (let start = 0, index = 0; start < content.length; index += 1) {
+    let end = start; let characters = 0;
+    while (end < content.length && characters < 500) {
+      const point = content.codePointAt(end)!;
+      const width = point > 0xFFFF ? 2 : 1;
+      if (end - start + width > 500) break;
+      end += width;
+      characters += 1;
+    }
+    const bytes = createHash("sha256").update(`${runId}:material:${materialId}:${index}`, "utf8").digest().subarray(0, 16);
+    bytes[6] = (bytes[6] & 0x0F) | 0x50; bytes[8] = (bytes[8] & 0x3F) | 0x80;
+    const hex = bytes.toString("hex");
     const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     records.push(evidenceRecordFromSpan({ id, sourceKind: "upload", sourceRole: "user_provided", sourceUrl: `https://kely.invalid/material/${materialId}`, content, span: { start, end }, fetchedAt }));
+    start = end;
   }
   return records;
+}
+
+export function materialObservationContext(observations: AnalysisProposal["observations"], evidence: BrandEvidenceRecord[]) {
+  return observations.map((observation) => ({ ...observation, evidenceIds: evidence.filter((item) => item.sourceUrl.endsWith(`/material/${observation.materialId}`)).map((item) => item.id) }));
 }
 
 export async function runLiveResearch(ownerId: string, runId: string, input: BrandResearchInput, reservation: BudgetPackageInput, dependencies: LiveResearchDependencies) {
@@ -104,7 +118,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     for (const evidence of acquiredEvidence) await dependencies.store.addSource(ownerId, runId, evidence, "complete");
     const evidence = [...initialEvidence, ...materialEvidence, ...discoveredEvidence, ...acquiredEvidence];
     await dependencies.store.appendStatus(ownerId, runId, "extracting", { evidence: evidence.length });
-    const context = stageContext({ research: assembleResearchContext(input, evidence), materialObservations: materialAnalysis?.observations ?? [], materialDirection: materialAnalysis?.direction ?? null, materialLimitations: materialAnalysis?.limitations ?? [] });
+    const context = stageContext({ research: assembleResearchContext(input, evidence), materialObservations: materialAnalysis ? materialObservationContext(materialAnalysis.observations, materialEvidence) : [], materialDirection: materialAnalysis?.direction ?? null, materialLimitations: materialAnalysis?.limitations ?? [] });
     const extractionRaw = await dependencies.gateway.dispatch(extractionStageAttempt({ ownerId, runId, context, reservation }));
     const extraction = parseExtractionStageResponse(extractionRaw.response, evidence);
     const suppliedHosts = new Set(input.userSuppliedUrls.map((url) => new URL(canonicalEvidenceUrl(url)).hostname));
