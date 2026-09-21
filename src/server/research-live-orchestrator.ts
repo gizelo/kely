@@ -46,6 +46,12 @@ function normalizedEntityName(value: string) {
   return value.normalize("NFKC").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+function suppliedHostNameMatches(requestedName: string, candidateName: string) {
+  const requested = normalizedEntityName(requestedName);
+  const candidate = normalizedEntityName(candidateName);
+  return requested.length > 0 && (candidate === requested || candidate.startsWith(`${requested} `));
+}
+
 export function materialObservationEvidence(runId: string, materialId: string, content: string, fetchedAt: string) {
   const records: BrandEvidenceRecord[] = [];
   for (let start = 0, index = 0; start < content.length; index += 1) {
@@ -133,7 +139,8 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
       const hostname = new URL(candidate.canonicalUrl).hostname;
       const officialIds = evidence.filter((item) => item.sourceRole === "official" && new URL(item.sourceUrl).hostname === hostname).map((item) => item.id);
       const localProof = candidate.id === selectedCandidateId;
-      return { ...candidate, evidenceIds: [...new Set([...candidate.evidenceIds, ...officialIds])], signals: { ...candidate.signals, exactNameMatch: localProof || candidate.signals.exactNameMatch, crossLinkedProfile: localProof, officialSiteClaim: (suppliedHosts.has(hostname) || localProof) && officialIds.length > 0 } };
+      const suppliedNameProof = suppliedHosts.has(hostname) && suppliedHostNameMatches(input.businessName, candidate.displayName);
+      return { ...candidate, evidenceIds: [...new Set([...candidate.evidenceIds, ...officialIds])], signals: { ...candidate.signals, exactNameMatch: localProof || suppliedNameProof || candidate.signals.exactNameMatch, crossLinkedProfile: localProof, officialSiteClaim: (suppliedHosts.has(hostname) || localProof) && officialIds.length > 0 } };
     });
     const base = createBrandIntelligenceSnapshot({ id: randomUUID(), version: 1, createdAt: new Date().toISOString(), query: { businessName: input.businessName, userSuppliedUrls: input.userSuppliedUrls }, evidence, entityCandidates, claims: extraction.claims, requiredAssets: extraction.requiredAssets });
     const readiness = classifyResearchReadiness(base);
