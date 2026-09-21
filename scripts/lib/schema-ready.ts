@@ -9,6 +9,8 @@ export async function assertSchemaReady(pool: Pool) {
   const applied = new Map(rows.map(row => [row.name, row.sha256]));
   for (const name of files) {
     const hash = createHash("sha256").update(await readFile(new URL(name, directory))).digest("hex");
-    if (applied.get(name) !== hash) throw new Error("Database migration manifest does not match this release.");
+    const recordedHash = applied.get(name);
+    if (recordedHash === undefined) throw new Error(`Database migration is missing: ${name}.`);
+    if (recordedHash !== hash) throw new Error(`Database migration checksum differs: ${name}.`);
   }
 }

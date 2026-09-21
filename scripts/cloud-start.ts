@@ -46,7 +46,10 @@ main().catch(error => {
   const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
     ? ` (${error.code})`
     : "";
-  console.error(`Kely cloud startup stopped during ${startupStage}${code}. No credentials are logged.`);
+  const detail = error instanceof Error && /^Database migration (?:is missing|checksum differs): \d{3}_[a-z_]+\.sql\.$/.test(error.message)
+    ? ` ${error.message}`
+    : "";
+  console.error(`Kely cloud startup stopped during ${startupStage}${code}.${detail} No credentials are logged.`);
   process.exitCode = 1;
   stop();
 });
