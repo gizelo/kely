@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { researchPackageInput } from "../src/server/budget/research-package";
 import type { BrandEvidenceRecord, BrandIntelligenceClaim } from "../src/shared/brand-intelligence";
-import { checkStageAttempt, extractionStageAttempt, MAX_PLAN_CRITIC_REVISIONS, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyStageResponse, strategyStageAttempt, type ResearchStrategyOutput } from "../src/server/providers/research-stages";
+import { checkStageAttempt, extractionStageAttempt, MAX_PLAN_CRITIC_REVISIONS, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, parseStrategyStageResponse, strategyStageAttempt, type ResearchStrategyOutput } from "../src/server/providers/research-stages";
 
 const ownerId = "owner-1";
 const runId = "00000000-0000-4000-8000-000000000001";
@@ -109,6 +109,16 @@ test("strategy permits proposed creative direction but only references known fac
   const unknown = strategy();
   unknown.plan.slides[0].claimKeys = ["invented_price"];
   assert.throws(() => parseStrategyStageResponse(response(unknown), claims, [official]), /research_plan_claim_missing/u);
+});
+
+test("strategy draft preserves unresolved references for the bounded critic", () => {
+  const draft = strategy();
+  draft.brandProfile.facts.push({ key: "unverified_fact", value: "Unsupported", provenance: "proposed", confidence: "low", evidenceIds: [] });
+  draft.plan.slides[0].claimKeys.push("unverified_fact");
+  const parsed = parseStrategyDraftStageResponse(response(draft));
+  assert.equal(parsed.brandProfile.facts.at(-1)?.key, "unverified_fact");
+  assert.equal(parsed.plan.slides[0].claimKeys.at(-1), "unverified_fact");
+  assert.throws(() => parseStrategyStageResponse(response(draft), claims, [official]), /research_plan_claim_missing/);
 });
 
 test("strategy drops unrecognized profile facts and preserves user-provided fact provenance", () => {

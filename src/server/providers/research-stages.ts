@@ -151,7 +151,7 @@ export function strategyStageAttempt(input: ResearchStageAttemptInput) {
 }
 
 export function checkStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Critique the supplied structured strategy. Return pass with the unchanged strategy, or corrected with one corrected strategy. Never create new evidence or facts. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
+  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Critique the supplied structured strategy. Return pass only when every fact key and slide claim key exactly matches a supplied claim key and every factual statement is supported by those claims. Otherwise return corrected: remove or rewrite unsupported facts and copy, and use only exact supplied claim and evidence IDs. Never create new evidence, facts, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
 }
 
 function structuredOutput(raw: unknown): unknown {
@@ -246,6 +246,19 @@ function normalizeStrategyFacts(result: z.infer<typeof researchStrategySchema>, 
     return [fact];
   });
   return { ...result, brandProfile: { ...result.brandProfile, facts } };
+}
+
+function validateStrategyShape(result: z.infer<typeof researchStrategySchema>) {
+  if (result.plan.slideCount !== result.plan.slides.length || result.plan.format === "single" && result.plan.slideCount !== 1 || result.plan.format === "carousel" && result.plan.slideCount < 2) throw new Error("research_plan_shape_invalid");
+  const indexes = result.plan.slides.map((slide) => slide.index);
+  unique(indexes.map(String), "research_slide_index_duplicate");
+  if (indexes.some((value, index) => value !== index + 1)) throw new Error("research_slide_index_invalid");
+  for (const slide of result.plan.slides) unique(slide.claimKeys, "research_slide_claim_duplicate");
+  return result;
+}
+
+export function parseStrategyDraftStageResponse(raw: unknown) {
+  return validateStrategyShape(researchStrategySchema.parse(structuredOutput(raw)));
 }
 
 export function parseStrategyStageResponse(raw: unknown, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[]) {

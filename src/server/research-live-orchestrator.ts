@@ -6,7 +6,7 @@ import { assembleResearchContext } from "./brand-intelligence-context";
 import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot, evidenceRecordFromSpan } from "./brand-intelligence";
 import { acquireResearchSources, type ResearchAcquisitionResult, type ResearchSourceSeed } from "./research-source-acquisition";
 import type { EntitySearchInput, EntitySearchResult } from "./providers/research-dispatcher";
-import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyStageResponse, strategyStageAttempt } from "./providers/research-stages";
+import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, strategyStageAttempt } from "./providers/research-stages";
 import { analysisRequest, parseAnalysis, type AnalysisInput } from "./providers/analysis";
 import { bindResearchAttempt } from "./budget/research-package";
 import { inputHash } from "./paid-input";
@@ -152,7 +152,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     }
     await dependencies.store.appendStatus(ownerId, runId, "strategizing", { packageId: reservation.id });
     const strategyRaw = await dependencies.gateway.dispatch(strategyStageAttempt({ ownerId, runId, context: stageContext({ input, snapshot: base }), reservation }));
-    const strategy = parseStrategyStageResponse(strategyRaw.response, extraction.claims, evidence);
+    const strategy = parseStrategyDraftStageResponse(strategyRaw.response);
     await dependencies.store.appendStatus(ownerId, runId, "checking", { packageId: reservation.id });
     const checkRaw = await dependencies.gateway.dispatch(checkStageAttempt({ ownerId, runId, context: stageContext({ input, snapshot: base, strategy }), reservation }));
     const check = parseCheckStageResponse(checkRaw.response, strategy, extraction.claims, evidence);
