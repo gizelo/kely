@@ -166,7 +166,9 @@ export function classifyResearchReadiness(snapshot: BrandIntelligenceSnapshot, r
   const questions: ResearchQuestion[] = [];
   const assetCategory = (value: string) => {
     const normalized = value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
-    return normalized === "logo" || normalized === "standalone-logo" ? "logo" : normalized;
+    if (normalized === "logo" || normalized === "standalone-logo") return "logo";
+    if (normalized === "additional-interface-screens" || normalized === "additional-product-interface-screens") return "additional-interface-screens";
+    return normalized;
   };
   const resolvedAssets = new Set(resolvedAssetKeys.map(assetCategory));
   if (snapshot.entityResolution.status !== "resolved") questions.push({ code: "entity_conflict", key: "business_identity", prompt: "Which exact business is this? Please share its official website or profile." });

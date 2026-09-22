@@ -48,6 +48,9 @@ test("all structured research stages build bounded attempts inside one package",
   assert.ok(attempts.every((item) => item.packageId === reservation.id));
   assert.deepEqual(attempts.map((item) => "max_output_tokens" in item.request && item.request.max_output_tokens), [2_048, 4_096, 2_048]);
   assert.equal(MAX_PLAN_CRITIC_REVISIONS, 2);
+  const extractionInstructions = "instructions" in attempts[0].request ? attempts[0].request.instructions : "";
+  assert.match(String(extractionInstructions), /only for an exact original without which/u);
+  assert.match(String(extractionInstructions), /reference-only/u);
 });
 
 test("extraction preserves provenance and drops external context as factual support", () => {
