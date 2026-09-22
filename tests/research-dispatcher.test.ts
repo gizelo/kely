@@ -51,15 +51,26 @@ test("dispatcher accepts an explicitly supplied canonical URL when search cites 
   assert.equal(result.candidates[0].signals.userSuppliedUrl, true);
 });
 
-test("dispatcher accepts a canonical root only when search returned the same host", async () => {
+test("dispatcher keeps only candidates whose canonical host was returned by search", async () => {
   const output = { kind: "entity_discovery", candidates: [{ id: "girex-pos", displayName: "Girex POS", canonicalUrl: "https://girex.id/", citations: [{ url: "https://girex.id/login", excerpt: "Girex POS login page." }] }] };
   const searchResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.id/login" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
   const result = await dispatchEntitySearch({ async dispatch() { return { response: searchResponse, assessment: {}, replayed: false }; } }, reservedInput);
   assert.equal(result.candidates[0].canonicalUrl, "https://girex.id/");
 
-  const foreign = { ...output, candidates: [{ ...output.candidates[0], canonicalUrl: "https://invented.example/" }] };
-  const foreignResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.id/login" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(foreign) }] }] });
-  await assert.rejects(dispatchEntitySearch({ async dispatch() { return { response: foreignResponse, assessment: {}, replayed: false }; } }, reservedInput), /research_candidate_url_not_returned_by_search/u);
+  const mixed = { ...output, candidates: [output.candidates[0], { ...output.candidates[0], id: "invented", canonicalUrl: "https://invented.example/", citations: [{ url: "https://example.com/directory", excerpt: "An unsupported candidate." }] }] };
+  const mixedResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://girex.id/login" }, { type: "url", url: "https://example.com/directory" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(mixed) }] }] });
+  const filtered = await dispatchEntitySearch({ async dispatch() { return { response: mixedResponse, assessment: {}, replayed: false }; } }, reservedInput);
+  assert.deepEqual(filtered.candidates.map((candidate) => candidate.id), ["girex-pos"]);
+  assert.equal(filtered.evidence.length, 1);
+  assert.equal(filtered.evidence[0].sourceUrl, "https://girex.id/login");
+});
+
+test("dispatcher returns an empty result when every candidate lacks source-backed provenance", async () => {
+  const unsupported = { kind: "entity_discovery", candidates: [{ id: "invented", displayName: "Invented Girex", canonicalUrl: "https://invented.example/", citations: [{ url: "https://example.com/directory", excerpt: "A directory result with no source-backed canonical host." }] }] };
+  const searchResponse = response({ output: [{ type: "web_search_call", action: { type: "search", query: "Girex", sources: [{ type: "url", url: "https://example.com/directory" }] } }, { type: "message", content: [{ type: "output_text", text: JSON.stringify(unsupported) }] }] });
+  const result = await dispatchEntitySearch({ async dispatch() { return { response: searchResponse, assessment: {}, replayed: false }; } }, reservedInput);
+  assert.deepEqual(result.candidates, []);
+  assert.deepEqual(result.evidence, []);
 });
 
 test("unreturned citations and model-controlled official signals fail closed", async () => {
