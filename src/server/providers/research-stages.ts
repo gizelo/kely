@@ -192,6 +192,7 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
     const records = item.evidenceIds.map((id) => evidence.get(id));
     if (records.some((record) => !record)) return [];
     const supported = records as BrandEvidenceRecord[];
+    if (item.kind !== "creative" && item.provenance === "proposed") return [];
     if (item.kind !== "creative" && supported.some((record) => record.sourceRole === "external_context")) return [];
     if (item.kind !== "creative" && supported.some((record) => record.sourceKind === "upload")) return [];
     if (item.kind !== "creative" && item.provenance === "verified" && supported.some((record) => record.sourceRole !== "official")) return [];
@@ -205,10 +206,7 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
     return [evidenceIds.length ? { ...item, evidenceIds } : { ...item, provenance: "proposed" as const, evidenceIds: [] }];
   }) };
   unique(result.claims.map((item) => item.key), "research_claim_duplicate");
-  result.claims.forEach((item) => {
-    if (item.provenance === "proposed" && item.kind !== "creative") throw new Error("proposed_fact_invalid");
-    validateAttribution(item, evidence, item.kind !== "creative");
-  });
+  result.claims.forEach((item) => validateAttribution(item, evidence, item.kind !== "creative"));
   const claims: BrandIntelligenceClaim[] = result.claims.map((item) => ({
     key: item.key, kind: item.kind, value: item.value, confidence: item.confidence, evidenceIds: item.evidenceIds,
     status: item.provenance === "user_provided" ? "confirmed" : item.provenance === "proposed" ? "proposed" : item.provenance === "contradicted" ? "contradicted" : "observed",

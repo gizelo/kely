@@ -73,7 +73,7 @@ test("extraction preserves provenance and drops external context as factual supp
   const bad = extraction({ claims: [{ key: "category", kind: "fact", value: "Software", provenance: "inferred", confidence: "medium", evidenceIds: [external.id] }] });
   assert.deepEqual(parseExtractionStageResponse(response(bad), [official, external]).claims, []);
   const proposedFact = extraction({ claims: [{ key: "price", kind: "price", value: "$10", provenance: "proposed", confidence: "low", evidenceIds: [] }] });
-  assert.throws(() => parseExtractionStageResponse(response(proposedFact), [official]), /proposed_fact_invalid/u);
+  assert.deepEqual(parseExtractionStageResponse(response(proposedFact), [official]).claims, []);
 });
 
 test("creative proposals cannot upgrade inspiration into supporting evidence", () => {
