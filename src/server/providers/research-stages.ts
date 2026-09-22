@@ -189,21 +189,18 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   if (evidence.size !== evidenceRecords.length) throw new Error("research_evidence_duplicate");
   const result = { ...parsed, claims: parsed.claims.flatMap((item) => {
-    const records = item.evidenceIds.map((id) => {
-      const record = evidence.get(id);
-      if (!record) throw new Error("research_evidence_missing");
-      return record;
-    });
-    if (item.kind !== "creative" && records.some((record) => record.sourceRole === "external_context")) return [];
-    if (item.kind !== "creative" && records.some((record) => record.sourceKind === "upload")) return [];
-    if (item.kind !== "creative" && item.provenance === "verified" && records.some((record) => record.sourceRole !== "official")) return [];
+    const records = item.evidenceIds.map((id) => evidence.get(id));
+    if (records.some((record) => !record)) return [];
+    const supported = records as BrandEvidenceRecord[];
+    if (item.kind !== "creative" && supported.some((record) => record.sourceRole === "external_context")) return [];
+    if (item.kind !== "creative" && supported.some((record) => record.sourceKind === "upload")) return [];
+    if (item.kind !== "creative" && item.provenance === "verified" && supported.some((record) => record.sourceRole !== "official")) return [];
     if (item.kind !== "creative") return item;
     if (item.provenance === "proposed") return { ...item, evidenceIds: [] };
     if (item.provenance !== "user_provided") return item;
     const evidenceIds = item.evidenceIds.filter((id) => {
       const record = evidence.get(id);
-      if (!record) throw new Error("research_evidence_missing");
-      return record.sourceRole === "user_provided";
+      return record?.sourceRole === "user_provided";
     });
     return [evidenceIds.length ? { ...item, evidenceIds } : { ...item, provenance: "proposed" as const, evidenceIds: [] }];
   }) };

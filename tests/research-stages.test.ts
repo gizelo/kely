@@ -113,6 +113,15 @@ test("verified business facts without official evidence are dropped", () => {
   assert.deepEqual(parsed.claims, []);
 });
 
+test("a model-mutated evidence id drops only that unsupported claim", () => {
+  const output = extraction({ claims: [
+    { key: "category", kind: "fact", value: "Scheduling software", provenance: "verified", confidence: "high", evidenceIds: [official.id] },
+    { key: "mutated", kind: "fact", value: "Unsupported external listing", provenance: "verified", confidence: "medium", evidenceIds: ["official-2"] },
+  ] });
+  const parsed = parseExtractionStageResponse(response(output), [official]);
+  assert.deepEqual(parsed.claims.map((item) => item.key), ["category"]);
+});
+
 test("strategy permits proposed creative direction but only references known facts", () => {
   const parsed = parseStrategyStageResponse(response(strategy()), claims, [official]);
   assert.equal(parsed.plan.slideCount, 2);
