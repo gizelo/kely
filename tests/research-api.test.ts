@@ -30,6 +30,20 @@ test("research input is strict, bounded and HTTPS-only", () => {
   assert.throws(() => researchStartSchema.parse({ ...valid(), extra: true }));
   assert.throws(() => researchStartSchema.parse({ ...valid(), userSuppliedUrls: ["http://girex.io"] }));
   assert.throws(() => researchCorrectionSchema.parse({ commandKey: "correct-command" }));
+  assert.throws(() => researchStartSchema.parse({ ...valid(), idea: "Create a one-slide carousel" }), /at least two slides/u);
+  assert.throws(() => researchCorrectionSchema.parse({ commandKey: "correct-command", idea: "Create a single post with 3 slides" }), /only one slide/u);
+});
+
+test("a contradictory brief is rejected before entitlement, storage or dispatch", async () => {
+  const previous = process.env.KELY_RESEARCH_MODE; process.env.KELY_RESEARCH_MODE = "openai";
+  try {
+    const store = new FakeStore(); let entitlements = 0; let dispatches = 0;
+    const service = new ResearchService(store, async () => { entitlements += 1; }, async (_viewer, run) => { dispatches += 1; return run; });
+    await assert.rejects(service.start(viewer, { ...valid("conflicting-command"), idea: "Create a one-slide carousel" }), /at least two slides/u);
+    assert.equal(entitlements, 0);
+    assert.equal(store.starts.length, 0);
+    assert.equal(dispatches, 0);
+  } finally { if (previous === undefined) delete process.env.KELY_RESEARCH_MODE; else process.env.KELY_RESEARCH_MODE = previous; }
 });
 
 test("fixture start is entitlement-gated, idempotent and explicitly simulated", async () => {

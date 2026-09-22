@@ -25,23 +25,6 @@ test("pipeline diagnostics expose only known stable codes", () => {
   assert.equal(safePipelineErrorCode("research_plan_shape_invalid"), "research_pipeline_failed");
 });
 
-test("a contradictory explicit format pauses before strategy or critic dispatch", async () => {
-  const run = view(); const steps: string[] = []; const snapshots: BrandIntelligenceSnapshot[] = [];
-  const official: BrandEvidenceRecord = { id: "10000000-0000-4000-8000-000000000009", sourceKind: "website", sourceRole: "official", sourceUrl: "https://acme.example/", excerpt: "Acme scheduling", span: { start: 0, end: 15 }, contentHash: "b".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" };
-  const result = await runLiveResearch("owner", runId, { businessName: "Acme", idea: "Create a one-slide carousel", platform: "linkedin", userSuppliedUrls: ["https://acme.example/"] }, reservation, {
-    store: { async read() { return run; }, async appendStatus(_o, _i, status, detail = {}) { run.status = status; run.statusDetail = detail; return run; }, async addSource() { return run; }, async acceptSnapshot(_o, _i, snapshot) { snapshots.push(snapshot); return { id: "snapshot", version: 1, hash: "c".repeat(64) }; } },
-    async verifyReservation() {},
-    async search() { return { candidates: [{ id: "acme", displayName: "Acme", canonicalUrl: "https://acme.example/", evidenceIds: [], signals: { userSuppliedUrl: true, officialSiteClaim: false, exactNameMatch: true, crossLinkedProfile: false } }], evidence: [], replayed: false, assessment: {} }; },
-    async acquire() { return { evidence: [official], outcomes: [{ url: official.sourceUrl, role: "official", kind: "website", status: "complete" }] }; },
-    gateway: { async dispatch(attempt) { steps.push(attempt.step); return { response: raw({ kind: "research_extraction", claims: [], requiredAssets: [] }), assessment: {}, replayed: false }; } },
-    async closeFromDurableEvidence() {},
-  });
-  assert.equal(result.status, "needs_input");
-  assert.deepEqual(steps, ["extract:0"]);
-  assert.equal(snapshots.length, 1);
-  assert.match(String((result.statusDetail as { questions?: string[] }).questions?.[0]), /at least two/u);
-});
-
 test("material observations are split to the durable evidence limit with run-scoped stable IDs", () => {
   const content = `${"a".repeat(499)}😀${"b".repeat(500)}`;
   const first = materialObservationEvidence(runId, "00000000-0000-4000-8000-000000000099", content, "2026-09-21T10:00:00.000Z");

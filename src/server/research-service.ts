@@ -11,6 +11,7 @@ import { researchPackageInput, reserveResearchPackage, closeResearchPackageFromD
 import { config } from "./config";
 import { dispatchEntitySearch } from "./providers/research-dispatcher";
 import { runLiveResearch } from "./research-live-orchestrator";
+import { researchBriefFormatConflict } from "./providers/research-stages";
 
 const commandKey = z.string().min(8).max(100);
 const httpsUrl = z.string().trim().max(2000).transform((value, context) => {
@@ -26,7 +27,10 @@ export const researchStartSchema = z.object({
   userSuppliedUrls: z.array(httpsUrl).max(5).default([]),
   materialIds: z.array(z.uuid()).max(3).default([]),
   commandKey,
-}).strict();
+}).strict().superRefine((value, context) => {
+  const conflict = researchBriefFormatConflict(value.idea);
+  if (conflict) context.addIssue({ code: "custom", path: ["idea"], message: conflict });
+});
 
 export const researchAnswerSchema = z.object({
   commandKey,
@@ -37,7 +41,11 @@ export const researchCorrectionSchema = z.object({
   commandKey,
   businessName: z.string().trim().min(1).max(160).optional(), category: z.string().trim().max(160).optional(), location: z.string().trim().max(160).optional(),
   idea: z.string().trim().min(1).max(2000).optional(), platform: z.enum(["instagram", "linkedin"]).optional(), userSuppliedUrls: z.array(httpsUrl).max(5).optional(),
-}).strict().refine((value) => Object.keys(value).some((key) => key !== "commandKey"), { message: "Provide at least one correction." });
+}).strict().superRefine((value, context) => {
+  if (!Object.keys(value).some((key) => key !== "commandKey")) context.addIssue({ code: "custom", message: "Provide at least one correction." });
+  const conflict = value.idea ? researchBriefFormatConflict(value.idea) : null;
+  if (conflict) context.addIssue({ code: "custom", path: ["idea"], message: conflict });
+});
 
 type StartInput = z.infer<typeof researchStartSchema>;
 type AnswerInput = z.infer<typeof researchAnswerSchema>;

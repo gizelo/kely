@@ -6,7 +6,7 @@ import { assembleResearchContext } from "./brand-intelligence-context";
 import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot, evidenceRecordFromSpan } from "./brand-intelligence";
 import { acquireResearchSources, type ResearchAcquisitionResult, type ResearchSourceSeed } from "./research-source-acquisition";
 import type { EntitySearchInput, EntitySearchResult } from "./providers/research-dispatcher";
-import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, researchBriefFormatConflict, strategyStageAttempt } from "./providers/research-stages";
+import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, strategyStageAttempt } from "./providers/research-stages";
 import { analysisRequest, parseAnalysis, type AnalysisInput } from "./providers/analysis";
 import { bindResearchAttempt } from "./budget/research-package";
 import { inputHash } from "./paid-input";
@@ -162,12 +162,6 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     if (!readiness.ready) {
       await dependencies.store.acceptSnapshot(ownerId, runId, base);
       const result = await dependencies.store.appendStatus(ownerId, runId, "needs_input", { questions: readiness.questions.slice(0, 3), packageId: reservation.id });
-      await dependencies.closeFromDurableEvidence(result); return result;
-    }
-    const formatConflict = researchBriefFormatConflict(input.idea);
-    if (formatConflict) {
-      await dependencies.store.acceptSnapshot(ownerId, runId, base);
-      const result = await dependencies.store.appendStatus(ownerId, runId, "needs_input", { questions: [formatConflict], packageId: reservation.id });
       await dependencies.closeFromDurableEvidence(result); return result;
     }
     await dependencies.store.appendStatus(ownerId, runId, "strategizing", { packageId: reservation.id });
