@@ -16,15 +16,44 @@ function evidenceId(namespace: string, url: string, excerpt: string, index: numb
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
 }
 
-function exactSpans(content: string) {
+function contiguousSpans(content: string) {
   const spans: { start: number; end: number }[] = [];
   let start = 0;
-  while (start < content.length && spans.length < 8) {
-    const end = Math.min(content.length, start + 500);
+  while (start < content.length) {
+    const maximum = Math.min(content.length, start + 500);
+    let end = maximum;
+    if (maximum < content.length) {
+      const section = content.slice(start, maximum);
+      const semantic = Math.max(section.lastIndexOf(". "), section.lastIndexOf("? "), section.lastIndexOf("! "), section.lastIndexOf("; "));
+      const whitespace = section.lastIndexOf(" ");
+      const boundary = semantic >= 249 ? semantic + 1 : whitespace >= 249 ? whitespace : -1;
+      if (boundary > 0) end = start + boundary;
+    }
     if (content.slice(start, end).trim()) spans.push({ start, end });
     start = end;
+    while (content[start] === " ") start += 1;
   }
   return spans;
+}
+
+function exactSpans(content: string) {
+  const spans = contiguousSpans(content);
+  if (spans.length <= 8) return spans;
+  const selected = new Set<number>();
+  for (let index = 0; index < 8; index += 1) selected.add(Math.round(index * (spans.length - 1) / 7));
+  return [...selected].sort((a, b) => a - b).map((index) => spans[index]);
+}
+
+function pageSignalSummary(signals: ReturnType<typeof extractPublicSourceSignals>) {
+  const parts = [
+    signals.title ? `Page title: ${signals.title}` : "",
+    signals.description ? `Meta description: ${signals.description}` : "",
+    signals.fontFamilies.length ? `Observed CSS font families (not owner-confirmed brand rules): ${signals.fontFamilies.join(", ")}` : "",
+    signals.colors.length ? `Observed CSS colors (not owner-confirmed brand rules): ${signals.colors.join(", ")}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  const summary = parts.join(". ");
+  return summary.length <= 500 ? summary : `${summary.slice(0, 499).trimEnd()}…`;
 }
 
 function boundedSeeds(seeds: ResearchSourceSeed[]) {
@@ -62,13 +91,15 @@ export async function acquireResearchSources(seeds: ResearchSourceSeed[], fetche
       if (response.contentType !== "text/html" || response.bytes.length > HTML_LIMIT) { outcomes.push({ ...seed, url: url.href, status: "failed", reason: "unsupported_content" }); continue; }
       const signals = extractPublicSourceSignals(response.bytes.toString("utf8"), url);
       const content = signals.visibleText;
-      for (const [index, span] of exactSpans(content).entries()) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, url.href, content.slice(span.start, span.end), index), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: url.href, content, span, fetchedAt }));
+      const summary = pageSignalSummary(signals);
+      if (summary) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, url.href, summary, 0), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: url.href, content: summary, span: { start: 0, end: summary.length }, fetchedAt }));
+      for (const [index, span] of exactSpans(content).entries()) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, url.href, content.slice(span.start, span.end), index + 1), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: url.href, content, span, fetchedAt }));
       const identity = seed.candidateId && seed.expectedName ? {
         exactNameMatch: pageNames(signals.title).includes(normalizedName(seed.expectedName)),
         canonicalSameHost: Boolean(signals.canonicalUrl && new URL(signals.canonicalUrl).hostname === url.hostname),
         linkedSocialProfile: signals.socialProfiles.length > 0,
       } : undefined;
-      outcomes.push({ ...seed, url: url.href, status: content ? "complete" : "partial", ...(content ? {} : { reason: "no_visible_text" }), ...(identity ? { identity } : {}) });
+      outcomes.push({ ...seed, url: url.href, status: content || summary ? "complete" : "partial", ...(content || summary ? {} : { reason: "no_visible_text" }), ...(identity ? { identity } : {}) });
       if (seed.role === "official" && seed.kind === "website") {
         const additions: ResearchSourceSeed[] = [
           ...signals.sameOriginPages.map((page) => ({ url: page, role: "official" as const, kind: "website" as const })),

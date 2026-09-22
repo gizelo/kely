@@ -143,3 +143,48 @@ test("critic pass is immutable while one explicit corrected result is accepted",
   const corrected = parseCheckStageResponse(response({ kind: "research_check", outcome: "corrected", issues: [{ code: "weak_angle", severity: "blocking", message: "The angle is generic.", slideIndex: 0 }], result: changed }), original, claims, [official]);
   assert.equal(corrected.result.plan.angle, "A stronger angle");
 });
+
+test("final critic output must be issue-free and faithful to explicit brief constraints", () => {
+  const original = strategy();
+  const brief = { businessName: "Example", idea: "Create a 2-slide LinkedIn carousel about recovering time.", platform: "linkedin" as const, userSuppliedUrls: [] };
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [{ code: "weak_angle", severity: "warning", message: "The angle is still generic.", slideIndex: 0 }], result: original }), original, claims, [official], brief), /research_check_pass_invalid/u);
+
+  const wrongPlatform = strategy(); wrongPlatform.plan.platform = "instagram";
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "corrected", issues: [{ code: "brand_mismatch", severity: "blocking", message: "Corrected platform.", slideIndex: 0 }], result: wrongPlatform }), original, claims, [official], brief), /research_plan_platform_mismatch/u);
+
+  const wrongCount = strategy(); wrongCount.plan.format = "single"; wrongCount.plan.slideCount = 1; wrongCount.plan.slides = [wrongCount.plan.slides[0]];
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "corrected", issues: [{ code: "narrative_gap", severity: "blocking", message: "Corrected count.", slideIndex: 0 }], result: wrongCount }), original, claims, [official], brief), /research_plan_count_mismatch/u);
+});
+
+test("final plan rejects repeated and placeholder creative work but accepts a specific repair", () => {
+  const brief = { businessName: "Example", idea: "Create a 3-slide LinkedIn carousel about recovering time.", platform: "linkedin" as const, userSuppliedUrls: [] };
+  const generic = strategy();
+  generic.plan.slideCount = 3;
+  generic.plan.slides = [
+    { index: 1, objective: "Hook", copy: "Recover time", visualDirection: "Simple card", claimKeys: [], materialIds: [] },
+    { index: 2, objective: "Explain", copy: "Recover time", visualDirection: "Simple card", claimKeys: [], materialIds: [] },
+    { index: 3, objective: "Closing", copy: "Recover time", visualDirection: "Simple card", claimKeys: [], materialIds: [] },
+  ];
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: generic }), generic, claims, [official], brief), /research_plan_copy_duplicate/u);
+
+  const repaired = strategy();
+  repaired.plan.slideCount = 3;
+  repaired.plan.slides = [
+    { index: 1, objective: "Expose the weekly coordination drain", copy: "Scheduling steals your week", visualDirection: "Oversized time block interrupted by a narrow accent rule", claimKeys: [], materialIds: [] },
+    { index: 2, objective: "Reframe coordination around one workspace", copy: "Bring the moving parts into one clear view", visualDirection: "Structured stack that groups the workflow into three distinct layers", claimKeys: ["category"], materialIds: [] },
+    { index: 3, objective: "Invite the owner to inspect the workflow", copy: "See what a calmer week could look like", visualDirection: "Quiet action frame with generous space around the final prompt", claimKeys: [], materialIds: [] },
+  ];
+  const accepted = parseCheckStageResponse(response({ kind: "research_check", outcome: "corrected", issues: [{ code: "weak_angle", severity: "blocking", message: "Replaced the generic structure with a specific progression.", slideIndex: 0 }], result: repaired }), generic, claims, [official], brief);
+  assert.equal(accepted.result.plan.slides.length, 3);
+});
+
+test("a plan that merely repeats the request is rejected conservatively", () => {
+  const original = strategy();
+  const idea = "Show owners how to recover time";
+  original.plan.purpose = idea;
+  original.plan.angle = idea;
+  original.plan.slides[0].objective = "Name the hidden coordination burden";
+  original.plan.slides[1].objective = "Connect the problem to a calmer workflow";
+  const brief = { businessName: "Example", idea, platform: "linkedin" as const, userSuppliedUrls: [] };
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: original }), original, claims, [official], brief), /research_plan_request_restatement/u);
+});

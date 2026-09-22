@@ -155,7 +155,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     const strategy = parseStrategyDraftStageResponse(strategyRaw.response);
     await dependencies.store.appendStatus(ownerId, runId, "checking", { packageId: reservation.id });
     const checkRaw = await dependencies.gateway.dispatch(checkStageAttempt({ ownerId, runId, context: stageContext({ input, snapshot: base, strategy }), reservation }));
-    const check = parseCheckStageResponse(checkRaw.response, strategy, extraction.claims, evidence);
+    const check = parseCheckStageResponse(checkRaw.response, strategy, extraction.claims, evidence, input);
     const finalSnapshot = { ...base, strategy: check.result, critic: { outcome: check.outcome, issues: check.issues } } as BrandIntelligenceSnapshot;
     await dependencies.store.acceptSnapshot(ownerId, runId, finalSnapshot);
     const result = await dependencies.store.appendStatus(ownerId, runId, "review_ready", { packageId: reservation.id, criticOutcome: check.outcome });

@@ -39,3 +39,29 @@ test("candidate identity signals come only from fetched page metadata and links"
   });
   assert.deepEqual(hostile.outcomes[0].identity, { exactNameMatch: false, canonicalSameHost: false, linkedSocialProfile: false });
 });
+
+test("SPA shells retain bounded page metadata and observed visual signals", async () => {
+  const result = await acquireResearchSources([{ url: "https://spa.example", role: "official", kind: "website" }], "2026-09-21T10:00:00.000Z", {
+    resolve,
+    async fetch() { return { contentType: "text/html", bytes: Buffer.from(`<title>Acme Exchange</title><meta name="description" content="Compare routes for a crypto swap"><style>:root{--accent:#6C3BFF;font-family:'Inter Tight', sans-serif}</style><script>renderApp()</script>`) }; },
+  });
+  assert.equal(result.outcomes[0].status, "complete");
+  const summary = result.evidence.find((item) => item.excerpt.includes("Meta description:"));
+  assert.ok(summary);
+  assert.match(summary.excerpt, /Page title: Acme Exchange/u);
+  assert.match(summary.excerpt, /Meta description: Compare routes/u);
+  assert.match(summary.excerpt, /Inter Tight/u);
+  assert.match(summary.excerpt, /#6C3BFF/u);
+  assert.equal(result.evidence.every((item) => !item.excerpt.includes("renderApp")), true);
+});
+
+test("semantic evidence samples useful text beyond the first four thousand characters", async () => {
+  const early = Array.from({ length: 80 }, (_, index) => `Navigation item ${index}.`).join(" ");
+  const late = `Product detail: Acme compares available routes before a customer chooses a swap. ${"Further explanation. ".repeat(120)}`;
+  const result = await acquireResearchSources([{ url: "https://long.example", role: "official", kind: "website" }], "2026-09-21T10:00:00.000Z", {
+    resolve,
+    async fetch() { return { contentType: "text/html", bytes: Buffer.from(`<main>${early}${"x ".repeat(2500)}${late}</main>`) }; },
+  });
+  assert.equal(result.evidence.some((item) => item.excerpt.includes("Product detail: Acme compares available routes")), true);
+  assert.equal(result.evidence.every((item) => item.excerpt.length <= 500 && item.span.end - item.span.start === item.excerpt.length), true);
+});

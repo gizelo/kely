@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { BudgetPackageInput } from "../budget/store";
-import type { BrandEvidenceRecord, BrandIntelligenceClaim } from "../../shared/brand-intelligence";
+import type { BrandEvidenceRecord, BrandIntelligenceClaim, BrandResearchInput } from "../../shared/brand-intelligence";
 import { researchTextStageAttempt } from "./research-dispatcher";
 
 export const MAX_PLAN_CRITIC_REVISIONS = 2;
@@ -147,11 +147,11 @@ export function extractionStageAttempt(input: ResearchStageAttemptInput) {
 }
 
 export function strategyStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and publication plan. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, proof, prices, offers, product capabilities, testimonials, or regulated claims." });
+  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and publication plan that follows the owner's exact platform and explicit format or slide-count request. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, proof, prices, offers, product capabilities, testimonials, or regulated claims. The plan must be specific to the supplied idea and audience: use a clear angle, a purposeful narrative progression, a distinct job and visual direction for every slide, a coherent caption and CTA, and available brand materials where relevant. Do not return placeholder labels, merely restate the request, or repeat the same copy, objective, or visual direction across slides." });
 }
 
 export function checkStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Critique the supplied structured strategy. Return pass only when every fact key and slide claim key exactly matches a supplied claim key and every factual statement is supported by those claims. Otherwise return corrected: remove or rewrite unsupported facts and copy, and use only exact supplied claim and evidence IDs. Never create new evidence, facts, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
+  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Critique the supplied structured strategy against every item in this rubric: owner brief and exact platform/format/count fidelity; a specific non-generic angle; narrative progression; a distinct useful job for every slide; caption and CTA coherence; appropriate brand and material use; meaningfully differentiated visual directions; platform fit; readability; and factual and regulated-claim safety. Return pass only when every rubric item passes and there are no issues. Otherwise return corrected with every issue recorded: repair the plan within the supplied evidence and brief, remove or rewrite unsupported facts and copy, and use only exact supplied claim and evidence IDs. Never create new evidence, facts, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. Do not accept placeholder labels, request restatements, or repeated copy, objectives, or visual directions. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
 }
 
 function structuredOutput(raw: unknown): unknown {
@@ -257,16 +257,63 @@ function validateStrategyShape(result: z.infer<typeof researchStrategySchema>) {
   return result;
 }
 
+function normalizedPlanText(value: string) {
+  return value.normalize("NFKC").toLocaleLowerCase("en").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function explicitSlideCount(idea: string) {
+  const match = /(?<![\p{L}\p{N}])([1-6]|one|two|three|four|five|six|один|одна|два|три|четыре|пять|шесть|ein|eine|zwei|drei|vier|fünf|sechs)\s*[-–]?\s*(?:slides?|слайд[а-я]*|folien?)(?![\p{L}])/iu.exec(idea);
+  if (!match) return null;
+  const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, один: 1, одна: 1, два: 2, три: 3, четыре: 4, пять: 5, шесть: 6, ein: 1, eine: 1, zwei: 2, drei: 3, vier: 4, fünf: 5, sechs: 6 };
+  return words[match[1].toLocaleLowerCase("en")] ?? Number(match[1]);
+}
+
+function explicitFormat(idea: string): "single" | "carousel" | null {
+  if (/\bcarousel\b|\bкарусел[ьи]\b|\bkarussell\b/iu.test(idea)) return "carousel";
+  if (/\b(?:single(?:[- ](?:image|post))?|one[- ](?:image|post))\b|\b(?:одиночн(?:ый|ое)\s+(?:пост|изображение)|один\s+(?:пост|слайд))\b|\b(?:einzel(?:bild|beitrag)|ein\s+bild)\b/iu.test(idea)) return "single";
+  return null;
+}
+
+function assertDistinct(values: string[], code: string) {
+  const normalized = values.map(normalizedPlanText);
+  if (new Set(normalized).size !== normalized.length) throw new Error(code);
+}
+
+function validatePlanAcceptance(result: ResearchStrategyOutput, brief: BrandResearchInput) {
+  const { plan } = result;
+  if (plan.platform !== brief.platform) throw new Error("research_plan_platform_mismatch");
+  const count = explicitSlideCount(brief.idea);
+  if (count !== null && plan.slideCount !== count) throw new Error("research_plan_count_mismatch");
+  const format = explicitFormat(brief.idea);
+  if (format && plan.format !== format) throw new Error("research_plan_format_mismatch");
+  if (plan.slides.length > 1) {
+    assertDistinct(plan.slides.map((slide) => slide.copy), "research_plan_copy_duplicate");
+    assertDistinct(plan.slides.map((slide) => slide.objective), "research_plan_objective_duplicate");
+    assertDistinct(plan.slides.map((slide) => slide.visualDirection), "research_plan_visual_duplicate");
+  }
+  const placeholders = /^(?:tbd|todo|placeholder|lorem ipsum|insert(?: text| copy| image)?|your text here|slide(?: \d+)?|hook|open|opening|intro|introduction|explain|body|middle|close|closing|cta|visual|image|design|layout)$/u;
+  for (const value of plan.slides.flatMap((slide) => [slide.objective, slide.copy, slide.visualDirection])) {
+    if (placeholders.test(normalizedPlanText(value))) throw new Error("research_plan_placeholder");
+  }
+  const request = normalizedPlanText(brief.idea);
+  if (request) {
+    const restatements = [plan.purpose, plan.angle, plan.caption, ...plan.slides.map((slide) => slide.copy)].map(normalizedPlanText).filter((value) => value === request).length;
+    if (restatements >= 2) throw new Error("research_plan_request_restatement");
+  }
+  return result;
+}
+
 export function parseStrategyDraftStageResponse(raw: unknown) {
   return validateStrategyShape(researchStrategySchema.parse(structuredOutput(raw)));
 }
 
-export function parseStrategyStageResponse(raw: unknown, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[]) {
+export function parseStrategyStageResponse(raw: unknown, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[], brief?: BrandResearchInput) {
   const claimMap = new Map(claims.map((item) => [item.key, item]));
   if (claimMap.size !== claims.length) throw new Error("research_claim_duplicate");
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   const parsed = researchStrategySchema.parse(structuredOutput(raw));
-  return validateStrategy(normalizeStrategyFacts(parsed, claimMap, evidence), claimMap, evidence);
+  const result = validateStrategy(normalizeStrategyFacts(parsed, claimMap, evidence), claimMap, evidence);
+  return brief ? validatePlanAcceptance(result, brief) : result;
 }
 
 function canonical(value: unknown): string {
@@ -275,10 +322,10 @@ function canonical(value: unknown): string {
   return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
 }
 
-export function parseCheckStageResponse(raw: unknown, original: ResearchStrategyOutput, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[]) {
+export function parseCheckStageResponse(raw: unknown, original: ResearchStrategyOutput, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[], brief?: BrandResearchInput) {
   const check = researchCheckSchema.parse(structuredOutput(raw));
   const result = validateStrategy(check.result, new Map(claims.map((item) => [item.key, item])), new Map(evidenceRecords.map((item) => [item.id, item])));
-  if (check.outcome === "pass" && (check.issues.some((item) => item.severity === "blocking") || canonical(result) !== canonical(original))) throw new Error("research_check_pass_invalid");
+  if (check.outcome === "pass" && (check.issues.length > 0 || canonical(result) !== canonical(original))) throw new Error("research_check_pass_invalid");
   if (check.outcome === "corrected" && !check.issues.length) throw new Error("research_check_correction_invalid");
-  return { ...check, result };
+  return { ...check, result: brief ? validatePlanAcceptance(result, brief) : result };
 }

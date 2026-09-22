@@ -42,6 +42,18 @@ function researchStrategy() {
   };
 }
 
+function variedResearchStrategy() {
+  const value = researchStrategy();
+  value.plan.slideCount = 4;
+  value.plan.slides = [
+    value.plan.slides[0],
+    { index: 2, objective: "Show how it works", copy: "Three steps to coordinate", visualDirection: "A structured process sequence", claimKeys: [], materialIds: [] },
+    { index: 3, objective: "Establish trust", copy: "Verified activity in one view", visualDirection: "An evidence-led signal grid", claimKeys: [], materialIds: [] },
+    { ...value.plan.slides[1], index: 4 },
+  ];
+  return value;
+}
+
 test("selected originals enter the post-local art direction while references remain analysis-only", () => {
   const baseline = brand();
   const selected = applySelectedOriginals(baseline, [ids.reference, ids.logo, ids.screenshot]);
@@ -94,6 +106,13 @@ test("research-aware creation freezes the exact ready snapshot while legacy v15 
   assert.equal(verifyCreationInput(current, inputHash(current)).research?.snapshotHash, researchHash);
   assert.throws(() => verifyCreationInput({ ...legacy, schemaVersion: 16 }, inputHash({ ...legacy, schemaVersion: 16 }) as string), { code: "creation_snapshot_invalid" });
   assert.throws(() => verifyCreationInput({ ...current, schemaVersion: 15 }, inputHash({ ...current, schemaVersion: 15 }) as string), { code: "creation_snapshot_invalid" });
+});
+
+test("researched objectives preserve distinct process and proof compositions", () => {
+  const strategy = variedResearchStrategy();
+  const research = { strategy } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.deepEqual(mapped.slides.map((slide) => slide.creativePlan?.purpose), ["hook", "process", "proof", "closing"]);
 });
 
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {

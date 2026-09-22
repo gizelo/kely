@@ -1,5 +1,7 @@
 const SOCIAL_HOSTS = new Set(["instagram.com", "www.instagram.com", "linkedin.com", "www.linkedin.com"]);
-const PAGE_HINTS = /(?:^|\/)(?:about|company|product|products|service|services|solutions|features|pricing|contact)(?:\/|$)/iu;
+const PAGE_HINTS = /(?:^|\/)(?:about|company|product|products|platform|service|services|solutions|features|how-it-works|use-cases|usecases|compare|integrations|pricing|faq|docs|contact)(?:\/|$)/iu;
+const HIGH_VALUE_PAGE_HINTS = /(?:^|\/)(?:product|products|platform|solutions|features|how-it-works|use-cases|usecases|compare|integrations)(?:\/|$)/iu;
+const MEDIUM_VALUE_PAGE_HINTS = /(?:^|\/)(?:service|services|pricing|faq|docs)(?:\/|$)/iu;
 
 export interface PublicSourceSignals {
   title: string;
@@ -54,8 +56,9 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
   const title = compact(bounded.match(/<title\b[^>]*>([\s\S]*?)<\/title>/iu)?.[1] ?? "", 200);
   let description = "";
   let canonicalUrl: string | null = null;
-  const sameOriginPages: string[] = [];
+  const sameOriginPages: { url: string; order: number; priority: number }[] = [];
   const socialProfiles: string[] = [];
+  const fontFamilies: string[] = [];
 
   for (const match of bounded.matchAll(/<meta\b[^>]*>/giu)) {
     const attrs = attributes(match[0]);
@@ -67,21 +70,35 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
 
   for (const match of bounded.matchAll(/<link\b[^>]*>/giu)) {
     const attrs = attributes(match[0]);
-    if ((attrs.get("rel") ?? "").toLowerCase().split(/\s+/u).includes("canonical")) {
+    const relations = (attrs.get("rel") ?? "").toLowerCase().split(/\s+/u);
+    if (relations.includes("canonical")) {
       const link = safePublicLink(attrs.get("href") ?? "", pageUrl);
       if (link && link.hostname === pageUrl.hostname) canonicalUrl = link.href;
     }
+    if (relations.includes("stylesheet")) {
+      const stylesheet = safePublicLink(decodeEntities(attrs.get("href") ?? ""), pageUrl);
+      if (stylesheet?.hostname === "fonts.googleapis.com" && stylesheet.pathname === "/css2") {
+        for (const declaration of stylesheet.searchParams.getAll("family")) {
+          const family = compact(declaration.split(":", 1)[0].replace(/\+/gu, " "), 100);
+          if (family) fontFamilies.push(family);
+        }
+      }
+    }
   }
 
+  let linkOrder = 0;
   for (const match of bounded.matchAll(/<a\b[^>]*>/giu)) {
     const link = safePublicLink(attributes(match[0]).get("href") ?? "", pageUrl);
     if (!link) continue;
     const host = link.hostname.toLowerCase();
     if (SOCIAL_HOSTS.has(host)) socialProfiles.push(link.href);
-    else if (host === pageUrl.hostname.toLowerCase() && link.pathname !== pageUrl.pathname && PAGE_HINTS.test(link.pathname)) sameOriginPages.push(link.href);
+    else if (host === pageUrl.hostname.toLowerCase() && link.pathname !== pageUrl.pathname && PAGE_HINTS.test(link.pathname)) {
+      const priority = HIGH_VALUE_PAGE_HINTS.test(link.pathname) ? 0 : MEDIUM_VALUE_PAGE_HINTS.test(link.pathname) ? 1 : 2;
+      sameOriginPages.push({ url: link.href, order: linkOrder, priority });
+    }
+    linkOrder += 1;
   }
 
-  const fontFamilies: string[] = [];
   for (const match of bounded.matchAll(/font-family\s*:\s*([^;}{]+)/giu)) {
     const family = compact(match[1], 100).replace(/["']/gu, "");
     if (family && !/^(?:inherit|initial|unset|sans-serif|serif|monospace)$/iu.test(family)) fontFamilies.push(family);
@@ -97,7 +114,7 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
     title,
     description,
     canonicalUrl,
-    sameOriginPages: unique(sameOriginPages, 4),
+    sameOriginPages: [...new Map(sameOriginPages.sort((a, b) => a.priority - b.priority || a.order - b.order).map((item) => [item.url, item])).values()].slice(0, 4).map((item) => item.url),
     socialProfiles: unique(socialProfiles, 3),
     fontFamilies: unique(fontFamilies, 8),
     colors,

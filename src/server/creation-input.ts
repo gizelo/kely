@@ -14,6 +14,7 @@ import type { Pool, PoolClient } from "pg";
 import { researchStrategySchema, type ResearchStrategyOutput } from "./providers/research-stages";
 import { validateCreativePlan } from "./creative-intent";
 import type { SlideView } from "../shared/contracts";
+import type { CreativePlan } from "../shared/creative-intent";
 
 type ResearchQueryClient = Pick<Pool | PoolClient, "query">;
 
@@ -152,6 +153,20 @@ function splitApprovedCopy(copy: string) {
   return { title, body: body.join("\n") };
 }
 
+function researchedSlidePurpose(slide: ResearchStrategyOutput["plan"]["slides"][number], index: number, slideCount: number): CreativePlan["purpose"] {
+  if (index === 0) return "hook";
+  if (slideCount > 1 && index === slideCount - 1) return "closing";
+  const intent = `${slide.objective}\n${slide.copy}\n${slide.visualDirection}`.normalize("NFKC").toLocaleLowerCase("en");
+  if (/(?:how|steps?|process|flow|journey|works?|mechanism|sequence|шаг|процесс|как это работает|ablauf|schritte)/u.test(intent)) return "process";
+  if (/(?:proof|evidence|result|trust|security|verified|escrow|metric|data|why believe|доказ|результат|безопас|провер|sicher|beleg|ergebnis)/u.test(intent)) return "proof";
+  return "explain";
+}
+
+function researchedSlideRecipe(purpose: CreativePlan["purpose"], materialId: string): CreativePlan["recipe"] {
+  if (materialId) return purpose === "proof" ? "image-evidence" : "graphic-stage";
+  return purpose === "closing" ? "closing" : "type-poster";
+}
+
 export function researchedPublicationPlan(research: FrozenCreationResearch, brand: FrozenBrand, origin: CreationInput["origin"], slideId: (index: number) => string) {
   const { plan } = research.strategy;
   requireCondition(plan.slides.length === plan.slideCount && (plan.format === "single" ? plan.slideCount === 1 : plan.slideCount >= 2), "research_plan_incompatible", "The reviewed research plan has an inconsistent publication format.", 409);
@@ -160,14 +175,14 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
     requireCondition(slide.index === index + 1 && slide.visualDirection.length <= 300, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
     const materialId = slide.materialIds[0] ?? "";
     requireCondition(slide.materialIds.length <= 1 && (!materialId || brand.art!.direction.heroMaterialIds.includes(materialId)), "research_plan_incompatible", "A reviewed slide references an unavailable or unsupported original material.", 409);
-    const last = plan.slideCount > 1 && index === plan.slideCount - 1;
+    const purpose = researchedSlidePurpose(slide, index, plan.slideCount);
     const creativePlan = validateCreativePlan({
-      purpose: index === 0 ? "hook" : last ? "closing" : "explain",
-      recipe: materialId ? "graphic-stage" : last ? "closing" : "type-poster",
+      purpose,
+      recipe: researchedSlideRecipe(purpose, materialId),
       materialId,
-      heading: index === 0 || last ? "large" : "medium",
-      background: last ? "foreground" : "background",
-      alignment: last ? "center" : "left",
+      heading: purpose === "hook" || purpose === "closing" ? "large" : "medium",
+      background: purpose === "closing" ? "foreground" : "background",
+      alignment: purpose === "closing" ? "center" : "left",
       rationale: slide.visualDirection,
     }, brand.art!);
     return { id: slideId(index), index, ...splitApprovedCopy(slide.copy), creativePlan, copyOrigin: origin, visualOrigin: "deterministic" };

@@ -16,7 +16,7 @@ test("extracts bounded official source signals without following arbitrary links
   assert.equal(result.title, "Acme Studio");
   assert.equal(result.description, "Brand systems for small teams");
   assert.equal(result.canonicalUrl, "https://acme.example/home");
-  assert.deepEqual(result.sameOriginPages, ["https://acme.example/about", "https://acme.example/features"]);
+  assert.deepEqual(result.sameOriginPages, ["https://acme.example/features", "https://acme.example/about"]);
   assert.deepEqual(result.socialProfiles, ["https://www.instagram.com/acme/", "https://www.linkedin.com/company/acme/"]);
   assert.deepEqual(result.fontFamilies, ["Inter Tight, sans-serif"]);
   assert.deepEqual(result.colors.sort(), ["#6C3BFF", "#C8FF48"]);
@@ -45,4 +45,27 @@ test("deduplicates and caps discovered pages and profiles", () => {
   const result = extractPublicSourceSignals(pageLinks + socialLinks, new URL("https://brand.example/"));
   assert.equal(result.sameOriginPages.length, 4);
   assert.equal(result.socialProfiles.length, 3);
+});
+
+test("ranks product understanding pages ahead of earlier low-value links", () => {
+  const result = extractPublicSourceSignals(`
+    <a href="/contact">Contact</a><a href="/about">About</a><a href="/company">Company</a>
+    <a href="/faq">FAQ</a><a href="/how-it-works">How it works</a><a href="/use-cases/teams">Use cases</a>
+    <a href="/features">Features</a><a href="/integrations">Integrations</a>
+  `, new URL("https://acme.example/"));
+  assert.deepEqual(result.sameOriginPages, [
+    "https://acme.example/how-it-works",
+    "https://acme.example/use-cases/teams",
+    "https://acme.example/features",
+    "https://acme.example/integrations",
+  ]);
+});
+
+test("reads declared Google Fonts families without fetching third-party stylesheets", () => {
+  const result = extractPublicSourceSignals(`
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700&amp;family=Inter:wght@400;600&amp;display=swap">
+    <link rel="stylesheet" href="https://untrusted.example/css2?family=Impostor">
+  `, new URL("https://acme.example/"));
+  assert.deepEqual(result.fontFamilies, ["Unbounded", "Inter"]);
 });
