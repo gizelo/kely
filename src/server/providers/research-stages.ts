@@ -41,6 +41,8 @@ const attributedRuleSchema = z.object({
 
 const slideSchema = z.object({
   index: z.number().int().min(1).max(6),
+  role: z.enum(["hook", "explain", "proof", "process", "closing"]).optional(),
+  newInformation: z.string().trim().min(1).max(300).optional(),
   objective: z.string().trim().min(1).max(300),
   copy: z.string().trim().min(1).max(1_200),
   visualDirection: z.string().trim().min(1).max(1_000),
@@ -74,7 +76,7 @@ export const researchStrategySchema = z.object({
 }).strict();
 
 const criticIssueSchema = z.object({
-  code: z.enum(["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk"]),
+  code: z.enum(["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk", "claim_repetition", "compliance_tone", "audience_indifference", "caption_repetition", "cta_payoff_missing", "unrenderable_direction", "brand_cue_missing"]),
   severity: z.enum(["warning", "blocking"]),
   message: z.string().trim().min(1).max(500),
   slideIndex: z.number().int().min(0).max(6),
@@ -111,8 +113,8 @@ const profileProperties = Object.fromEntries(["facts", "tone", "palette", "typog
   type: "array", maxItems: key === "facts" ? 24 : key === "allowedMaterials" || key === "prohibitions" ? 12 : 8, items: attributionJsonSchema,
 }]));
 const slideJsonSchema = {
-  type: "object", additionalProperties: false, required: ["index", "objective", "copy", "visualDirection", "claimKeys", "materialIds"], properties: {
-    index: { type: "integer", enum: [1, 2, 3, 4, 5, 6] }, objective: { type: "string" }, copy: { type: "string" }, visualDirection: { type: "string" },
+  type: "object", additionalProperties: false, required: ["index", "role", "newInformation", "objective", "copy", "visualDirection", "claimKeys", "materialIds"], properties: {
+    index: { type: "integer", enum: [1, 2, 3, 4, 5, 6] }, role: { type: "string", enum: ["hook", "explain", "proof", "process", "closing"] }, newInformation: { type: "string" }, objective: { type: "string" }, copy: { type: "string" }, visualDirection: { type: "string" },
     claimKeys: { type: "array", maxItems: 8, items: { type: "string" } }, materialIds: { type: "array", maxItems: 8, items: { type: "string" } },
   },
 } as const;
@@ -131,7 +133,7 @@ const extractionJsonSchema = { type: "object", additionalProperties: false, requ
   requiredAssets: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["id", "label", "available"], properties: { id: { type: "string" }, label: { type: "string" }, available: { type: "boolean" } } } },
 } } as const;
 const issueJsonSchema = { type: "object", additionalProperties: false, required: ["code", "severity", "message", "slideIndex"], properties: {
-  code: { type: "string", enum: ["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk"] }, severity: { type: "string", enum: ["warning", "blocking"] }, message: { type: "string" }, slideIndex: { type: "integer", enum: [0, 1, 2, 3, 4, 5, 6] },
+  code: { type: "string", enum: ["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk", "claim_repetition", "compliance_tone", "audience_indifference", "caption_repetition", "cta_payoff_missing", "unrenderable_direction", "brand_cue_missing"] }, severity: { type: "string", enum: ["warning", "blocking"] }, message: { type: "string" }, slideIndex: { type: "integer", enum: [0, 1, 2, 3, 4, 5, 6] },
 } } as const;
 
 export const RESEARCH_STAGE_JSON_SCHEMAS = Object.freeze({
@@ -147,11 +149,11 @@ export function extractionStageAttempt(input: ResearchStageAttemptInput) {
 }
 
 export function strategyStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and publication plan that follows the owner's exact platform and explicit format or slide-count request. A single post must have exactly one slide; a carousel must have two to six slides, and slideCount must exactly equal the number of returned slides. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, proof, prices, offers, product capabilities, testimonials, or regulated claims. The plan must be specific to the supplied idea and audience: use a clear angle, a purposeful narrative progression, a distinct job and visual direction for every slide, a coherent caption and CTA, and available brand materials where relevant. Do not return placeholder labels, merely restate the request, or repeat the same copy, objective, or visual direction across slides." });
+  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and a persuasive platform-native publication plan, not a research report or compliance memo. Follow the owner's exact platform and explicit format or slide-count request. A single post must have exactly one hook slide. A carousel must have two to six slides, start with role hook, end with role closing, and slideCount must exactly equal the number of returned slides. When the owner did not specify a count, use the fewest slides needed for a strong story and compress slides that perform the same job. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, audience pains, proof, prices, offers, product capabilities, testimonials, or regulated claims. The hook must create a useful curiosity gap without inventing a claim. Every slide must declare its role and one newInformation contribution, advance a purposeful narrative, and use a distinct visual direction that the deterministic renderer can express through typography, editorial lines, modular blocks, equations, paired evidence, process stacks, selected originals, or a closing action frame. Put repeated provenance qualifications such as 'describes', 'states', or 'publicly says' in one compact source boundary or the caption instead of weakening the main copy on several slides. Use available brand cues honestly; if no original brand asset exists, call the direction proposed or observed rather than brand-faithful. Keep the caption complementary instead of repeating most slide copy, and make the CTA pay off the chosen angle. Do not return placeholder labels, merely restate the request, or repeat the same claim set, copy, objective, new information, or visual direction across slides." });
 }
 
 export function checkStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Critique the supplied structured strategy against every item in this rubric: owner brief and exact platform/format/count fidelity; a specific non-generic angle; narrative progression; a distinct useful job for every slide; caption and CTA coherence; appropriate brand and material use; meaningfully differentiated visual directions; platform fit; readability; and factual and regulated-claim safety. Return pass only when every rubric item passes and there are no issues. Otherwise return corrected with every issue recorded: repair the plan within the supplied evidence and brief, remove or rewrite unsupported facts and copy, and use only exact supplied claim and evidence IDs. Never create new evidence, facts, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. Do not accept placeholder labels, request restatements, or repeated copy, objectives, or visual directions. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
+  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Act as a demanding creative director and factual reviewer. Critique every item: owner brief and exact platform/format/count fidelity; a specific audience-relevant angle; a useful curiosity gap; narrative progression; distinct information gain and job for every slide; concise independently scannable copy; caption and CTA payoff; honest brand/material use; visual directions expressible by the deterministic renderer; platform fit; readability; and factual and regulated-claim safety. Fail a plan that is merely safe but dull, reads like a research or compliance memo, repeats the same descriptors in paraphrase, puts provenance qualifications throughout the main copy, repeats most slides in the caption or recap, uses a generic CTA unrelated to the angle, claims brand recognizability without an original cue, or promises visual directions the renderer cannot execute. When the owner did not specify a slide count, compress redundant slides. Return pass only when every rubric item passes and there are no issues. Otherwise return corrected with every issue recorded and fully repair the plan within the supplied evidence and brief. Never create new evidence, facts, audience pains, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
 }
 
 function structuredOutput(raw: unknown): unknown {
@@ -254,6 +256,15 @@ function validateStrategyShape(result: z.infer<typeof researchStrategySchema>) {
   unique(indexes.map(String), "research_slide_index_duplicate");
   if (indexes.some((value, index) => value !== index + 1)) throw new Error("research_slide_index_invalid");
   for (const slide of result.plan.slides) unique(slide.claimKeys, "research_slide_claim_duplicate");
+  const roles = result.plan.slides.map((slide) => slide.role).filter(Boolean);
+  if (roles.length) {
+    if (result.plan.slideCount === 1) {
+      if (result.plan.slides[0].role !== "hook") throw new Error("research_plan_role_sequence_invalid");
+    } else {
+      if (result.plan.slides[0].role !== "hook" || result.plan.slides.at(-1)?.role !== "closing") throw new Error("research_plan_role_sequence_invalid");
+      if (result.plan.slides.slice(1, -1).some((slide) => slide.role === "hook" || slide.role === "closing")) throw new Error("research_plan_role_sequence_invalid");
+    }
+  }
   return result;
 }
 
@@ -299,6 +310,17 @@ function validatePlanAcceptance(result: ResearchStrategyOutput, brief: BrandRese
     assertDistinct(plan.slides.map((slide) => slide.copy), "research_plan_copy_duplicate");
     assertDistinct(plan.slides.map((slide) => slide.objective), "research_plan_objective_duplicate");
     assertDistinct(plan.slides.map((slide) => slide.visualDirection), "research_plan_visual_duplicate");
+    const information = plan.slides.map((slide) => slide.newInformation).filter((value): value is string => Boolean(value));
+    if (information.length) assertDistinct(information, "research_plan_information_duplicate");
+  }
+  const qualification = /\b(?:describes?|states?|publicly\s+(?:describes?|states?|says?))\b|\b(?:описывает|заявляет|публично\s+(?:описывает|заявляет))\b|\b(?:beschreibt|gibt\s+an|oeffentlich|öffentlich)\b/giu;
+  const qualifiedSlides = plan.slides.filter((slide) => (slide.copy.match(qualification) ?? []).length > 0).length;
+  if (qualifiedSlides > 1) throw new Error("research_plan_compliance_tone");
+  const requestedCount = explicitSlideCount(brief.idea);
+  if (requestedCount === null && plan.slides.length >= 5) {
+    const prior = new Set(plan.slides.slice(0, -1).flatMap((slide) => slide.claimKeys));
+    const finalClaims = [...new Set(plan.slides.at(-1)?.claimKeys ?? [])];
+    if (finalClaims.length >= 3 && finalClaims.every((key) => prior.has(key))) throw new Error("research_plan_redundant_recap");
   }
   const placeholders = /^(?:tbd|todo|placeholder|lorem ipsum|insert(?: text| copy| image)?|your text here|slide(?: \d+)?|hook|open|opening|intro|introduction|explain|body|middle|close|closing|cta|visual|image|design|layout)$/u;
   for (const value of plan.slides.flatMap((slide) => [slide.objective, slide.copy, slide.visualDirection])) {

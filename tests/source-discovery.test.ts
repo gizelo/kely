@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractPublicSourceSignals } from "../src/server/source-discovery";
+import { extractCssVisualSignals, extractPublicSourceSignals } from "../src/server/source-discovery";
 
 test("extracts bounded official source signals without following arbitrary links", () => {
   const result = extractPublicSourceSignals(`
@@ -68,4 +68,30 @@ test("reads declared Google Fonts families without fetching third-party styleshe
     <link rel="stylesheet" href="https://untrusted.example/css2?family=Impostor">
   `, new URL("https://acme.example/"));
   assert.deepEqual(result.fontFamilies, ["Unbounded", "Inter"]);
+});
+
+test("discovers only bounded same-origin stylesheets and reference-only metadata images", () => {
+  const result = extractPublicSourceSignals(`
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="https://acme.example/assets/layout.css">
+    <link rel="stylesheet" href="https://acme.example/assets/ignored.css">
+    <link rel="stylesheet" href="https://foreign.example/tracker.css">
+    <meta property="og:image" content="/social-card.png">
+    <meta name="twitter:image" content="https://cdn.example/card.png">
+    <link rel="icon" href="/favicon.svg">
+    <link rel="icon" href="http://unsafe.example/icon.png">
+  `, new URL("https://acme.example/"));
+  assert.deepEqual(result.sameOriginStylesheets, ["https://acme.example/assets/brand.css", "https://acme.example/assets/layout.css"]);
+  assert.deepEqual(result.metadataImageReferences, ["https://acme.example/social-card.png", "https://cdn.example/card.png", "https://acme.example/favicon.svg"]);
+});
+
+test("extracts bounded visual declarations from CSS without following imports", () => {
+  const result = extractCssVisualSignals(`
+    @import url("https://evil.example/remote.css");
+    @font-face { font-family: "Satoshi"; src: url("/satoshi.woff2") }
+    :root { --brand: #6c3bff; --accent: #C8FF48; }
+    body { font-family: "Inter Tight", sans-serif; color: #6c3bff; }
+  `);
+  assert.deepEqual(result.fontFamilies, ["Satoshi", "Inter Tight, sans-serif"]);
+  assert.deepEqual(result.colors, ["#6C3BFF", "#C8FF48"]);
 });

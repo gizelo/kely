@@ -154,6 +154,7 @@ function splitApprovedCopy(copy: string) {
 }
 
 function researchedSlidePurpose(slide: ResearchStrategyOutput["plan"]["slides"][number], index: number, slideCount: number): CreativePlan["purpose"] {
+  if (slide.role) return slide.role;
   if (index === 0) return "hook";
   if (slideCount > 1 && index === slideCount - 1) return "closing";
   const intent = `${slide.objective}\n${slide.copy}\n${slide.visualDirection}`.normalize("NFKC").toLocaleLowerCase("en");

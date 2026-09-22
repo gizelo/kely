@@ -200,3 +200,45 @@ test("a plan that merely repeats the request is rejected conservatively", () => 
   const brief = { businessName: "Example", idea, platform: "linkedin" as const, userSuppliedUrls: [] };
   assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: original }), original, claims, [official], brief), /research_plan_request_restatement/u);
 });
+
+test("new strategy contract requires explicit slide roles and information gain", () => {
+  const slide = RESEARCH_STAGE_JSON_SCHEMAS.strategy.properties.plan.properties.slides.items;
+  assert.equal(slide.required.includes("role"), true);
+  assert.equal(slide.required.includes("newInformation"), true);
+  assert.deepEqual(slide.properties.role.enum, ["hook", "explain", "proof", "process", "closing"]);
+});
+
+test("final plan rejects compliance-heavy copy and a redundant unrequested recap", () => {
+  const brief = { businessName: "Example", idea: "Create a LinkedIn carousel about the product.", platform: "linkedin" as const, userSuppliedUrls: [] };
+  const compliance = strategy();
+  compliance.plan.slides[0].copy = "Example publicly describes a clearer workflow";
+  compliance.plan.slides[1].copy = "Example states that teams can coordinate here";
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: compliance }), compliance, claims, [official], brief), /research_plan_compliance_tone/u);
+
+  const recap = strategy();
+  recap.plan.slideCount = 5;
+  recap.plan.slides = [
+    { index: 1, objective: "Frame the category", copy: "A clearer operating model", visualDirection: "Editorial opener", claimKeys: ["category"], materialIds: [] },
+    { index: 2, objective: "Show the first capability", copy: "Coordinate the work", visualDirection: "Structured stack", claimKeys: ["category"], materialIds: [] },
+    { index: 3, objective: "Show the second capability", copy: "Keep the context visible", visualDirection: "Signal grid", claimKeys: ["category"], materialIds: [] },
+    { index: 4, objective: "State the boundary", copy: "Review what is included", visualDirection: "Evidence pair", claimKeys: ["category"], materialIds: [] },
+    { index: 5, objective: "Repeat every point", copy: "The full list again", visualDirection: "Closing summary", claimKeys: ["category", "proof", "trust"], materialIds: [] },
+  ];
+  recap.plan.slides[0].claimKeys = ["category", "proof", "trust"];
+  assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: recap }), recap, claims, [official], brief), /research_plan_(claim_missing|redundant_recap)/u);
+});
+
+test("typed slide roles must form hook to closing sequence", () => {
+  const typed = strategy();
+  typed.plan.slides[0].role = "explain";
+  typed.plan.slides[0].newInformation = "Frame the category";
+  typed.plan.slides[1].role = "closing";
+  typed.plan.slides[1].newInformation = "Invite the next step";
+  assert.throws(() => parseStrategyDraftStageResponse(response(typed)), /research_plan_role_sequence_invalid/u);
+
+  const single = strategy();
+  single.plan.format = "single";
+  single.plan.slideCount = 1;
+  single.plan.slides = [{ ...single.plan.slides[0], role: "hook", newInformation: "Introduce the one useful idea" }];
+  assert.equal(parseStrategyDraftStageResponse(response(single)).plan.slides[0].role, "hook");
+});

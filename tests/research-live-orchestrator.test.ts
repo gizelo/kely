@@ -70,18 +70,35 @@ test("name-only resolution promotes one locally proven host but keeps same-name 
       { id: "acme-two", displayName: ambiguous ? "Acme" : "Different Company", canonicalUrl: "https://two.example/", evidenceIds: [], signals: { userSuppliedUrl: false, officialSiteClaim: false, exactNameMatch: false, crossLinkedProfile: false } },
     ];
     const evidence = candidates.map((candidate, index) => ({ id: `20000000-0000-4000-8000-00000000000${index + 1}`, sourceKind: "website" as const, sourceRole: "external_context" as const, sourceUrl: candidate.canonicalUrl, excerpt: `${candidate.displayName} scheduling`, span: { start: 0, end: 15 }, contentHash: "d".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" }));
+    let acquisitionCalls = 0;
     const result = await runLiveResearch("owner", runId, { businessName: "Acme", idea: "Launch", platform: "linkedin", userSuppliedUrls: [] }, reservation, {
       store: { async read() { return run; }, async appendStatus(_o, _i, status, detail = {}) { run.status = status; run.statusDetail = detail; return run; }, async addSource() { return run; }, async acceptSnapshot(_o, _i, snapshot) { snapshots.push(snapshot); return { id: "snapshot", version: 1, hash: "c".repeat(64) }; } },
       async verifyReservation() {},
       async search() { return { candidates, evidence: [], replayed: false, assessment: {} }; },
-      async acquire() { return { evidence, outcomes: candidates.map((candidate, index) => ({ url: candidate.canonicalUrl, role: "external_context" as const, kind: "website" as const, candidateId: candidate.id, status: "complete" as const, identity: { exactNameMatch: index === 0 || ambiguous, canonicalSameHost: true, linkedSocialProfile: index === 0 } })) }; },
+      async acquire(seeds) {
+        acquisitionCalls += 1;
+        if (acquisitionCalls === 1) return { evidence, outcomes: candidates.map((candidate, index) => ({ url: candidate.canonicalUrl, role: "external_context" as const, kind: "website" as const, candidateId: candidate.id, status: "complete" as const, identity: { exactNameMatch: index === 0 || ambiguous, canonicalSameHost: true, linkedSocialProfile: index === 0 } })) };
+        assert.deepEqual(seeds, [{ url: "https://one.example/", role: "official", kind: "website" }]);
+        return { evidence: [
+          { ...evidence[0], id: "20000000-0000-4000-8000-000000000010", sourceRole: "official" as const },
+          { ...evidence[0], id: "20000000-0000-4000-8000-000000000011", sourceRole: "official" as const, sourceUrl: "https://one.example/features", excerpt: "Acme product features", span: { start: 0, end: 21 } },
+        ], outcomes: [
+          { url: "https://one.example/", role: "official" as const, kind: "website" as const, status: "complete" as const },
+          { url: "https://one.example/features", role: "official" as const, kind: "website" as const, status: "complete" as const },
+        ] };
+      },
       gateway: { async dispatch(attempt) { calls.push(attempt.step); if (attempt.step === "extract:0") return { response: raw({ kind: "research_extraction", claims: [], requiredAssets: [] }), assessment: {}, replayed: false }; if (attempt.step === "strategy:0") return { response: raw(strategy), assessment: {}, replayed: false }; return { response: raw({ kind: "research_check", outcome: "pass", issues: [], result: strategy }), assessment: {}, replayed: false }; } },
       async closeFromDurableEvidence() {},
     });
     assert.equal(result.status, ambiguous ? "needs_input" : "review_ready");
+    assert.equal(acquisitionCalls, ambiguous ? 1 : 2);
     assert.equal(snapshots[0].entityResolution.status, ambiguous ? "ambiguous" : "resolved");
     assert.deepEqual(calls, ambiguous ? ["extract:0"] : ["extract:0", "strategy:0", "check:0"]);
-    if (!ambiguous) assert.equal(snapshots[0].evidence.filter((item) => item.sourceRole === "official").every((item) => new URL(item.sourceUrl).hostname === "one.example"), true);
+    if (!ambiguous) {
+      const official = snapshots[0].evidence.filter((item) => item.sourceRole === "official");
+      assert.equal(official.every((item) => new URL(item.sourceUrl).hostname === "one.example"), true);
+      assert.equal(official.some((item) => new URL(item.sourceUrl).pathname === "/features"), true);
+    }
   }
 });
 

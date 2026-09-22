@@ -125,14 +125,15 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     for (const evidence of discoveredEvidence) await dependencies.store.addSource(ownerId, runId, evidence, "complete");
     await dependencies.store.appendStatus(ownerId, runId, "fetching", { candidates: candidates.length });
     const seeds: ResearchSourceSeed[] = [...input.userSuppliedUrls.map((url) => ({ url, role: "official" as const, kind: "website" as const })), ...candidates.map((candidate) => ({ url: candidate.canonicalUrl, role: "external_context" as const, kind: "website" as const, candidateId: candidate.id, expectedName: input.businessName }))];
-    const acquired = await (dependencies.acquire ?? ((values, fetchedAt) => acquireResearchSources(values, fetchedAt, {}, runId)))(seeds, new Date().toISOString());
+    const acquire = dependencies.acquire ?? ((values: ResearchSourceSeed[], fetchedAt: string) => acquireResearchSources(values, fetchedAt, {}, runId));
+    const acquired = await acquire(seeds, new Date().toISOString());
     const proven = acquired.outcomes.filter((item) => item.status === "complete" && item.candidateId && item.identity?.exactNameMatch && item.identity.canonicalSameHost && item.identity.linkedSocialProfile);
     const sameNameCandidates = candidates.filter((candidate) => normalizedEntityName(candidate.displayName) === normalizedEntityName(input.businessName));
-    const selectedCandidateId = proven.length === 1 && sameNameCandidates.length === 1 ? proven[0].candidateId : null;
+    const selectedCandidateId = input.userSuppliedUrls.length === 0 && proven.length === 1 && sameNameCandidates.length === 1 ? proven[0].candidateId : null;
     const selectedHost = selectedCandidateId ? new URL(candidates.find((item) => item.id === selectedCandidateId)!.canonicalUrl).hostname : null;
-    const selectedEvidence = selectedHost ? acquired.evidence.filter((item) => new URL(item.sourceUrl).hostname === selectedHost).map((item) => {
-      return { ...item, id: randomUUID(), sourceRole: "official" as const };
-    }) : [];
+    const selectedCandidate = selectedCandidateId ? candidates.find((item) => item.id === selectedCandidateId) : null;
+    const promoted = selectedCandidate ? await acquire([{ url: selectedCandidate.canonicalUrl, role: "official", kind: "website" }], new Date().toISOString()) : { evidence: [], outcomes: [] };
+    const selectedEvidence = selectedHost ? promoted.evidence.filter((item) => new URL(item.sourceUrl).hostname === selectedHost) : [];
     const userOfficialHosts = new Set(input.userSuppliedUrls.map((url) => new URL(canonicalEvidenceUrl(url)).hostname));
     const userOfficialEvidence = acquired.evidence.filter((item) => item.sourceRole === "official" && userOfficialHosts.has(new URL(item.sourceUrl).hostname));
     const ids = new Set([...initialEvidence, ...discoveredEvidence].map((item) => item.id)); const acquiredEvidence = [...userOfficialEvidence, ...selectedEvidence].filter((item) => !ids.has(item.id));

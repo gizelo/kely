@@ -11,7 +11,14 @@ export interface PublicSourceSignals {
   socialProfiles: string[];
   fontFamilies: string[];
   colors: string[];
+  sameOriginStylesheets: string[];
+  metadataImageReferences: string[];
   visibleText: string;
+}
+
+export interface CssVisualSignals {
+  fontFamilies: string[];
+  colors: string[];
 }
 
 function decodeEntities(value: string) {
@@ -59,12 +66,18 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
   const sameOriginPages: { url: string; order: number; priority: number }[] = [];
   const socialProfiles: string[] = [];
   const fontFamilies: string[] = [];
+  const sameOriginStylesheets: string[] = [];
+  const metadataImageReferences: string[] = [];
 
   for (const match of bounded.matchAll(/<meta\b[^>]*>/giu)) {
     const attrs = attributes(match[0]);
     const key = (attrs.get("name") ?? attrs.get("property") ?? "").toLowerCase();
     if (!description && ["description", "og:description", "twitter:description"].includes(key)) {
       description = compact(attrs.get("content") ?? "", 500);
+    }
+    if (["og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"].includes(key)) {
+      const image = safePublicLink(attrs.get("content") ?? "", pageUrl);
+      if (image) metadataImageReferences.push(image.href);
     }
   }
 
@@ -77,12 +90,17 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
     }
     if (relations.includes("stylesheet")) {
       const stylesheet = safePublicLink(decodeEntities(attrs.get("href") ?? ""), pageUrl);
+      if (stylesheet?.origin === pageUrl.origin) sameOriginStylesheets.push(stylesheet.href);
       if (stylesheet?.hostname === "fonts.googleapis.com" && stylesheet.pathname === "/css2") {
         for (const declaration of stylesheet.searchParams.getAll("family")) {
           const family = compact(declaration.split(":", 1)[0].replace(/\+/gu, " "), 100);
           if (family) fontFamilies.push(family);
         }
       }
+    }
+    if (relations.some((relation) => ["icon", "apple-touch-icon", "mask-icon"].includes(relation))) {
+      const image = safePublicLink(decodeEntities(attrs.get("href") ?? ""), pageUrl);
+      if (image) metadataImageReferences.push(image.href);
     }
   }
 
@@ -118,6 +136,21 @@ export function extractPublicSourceSignals(html: string, pageUrl: URL): PublicSo
     socialProfiles: unique(socialProfiles, 3),
     fontFamilies: unique(fontFamilies, 8),
     colors,
+    sameOriginStylesheets: unique(sameOriginStylesheets, 2),
+    metadataImageReferences: unique(metadataImageReferences, 3),
     visibleText,
+  };
+}
+
+export function extractCssVisualSignals(css: string): CssVisualSignals {
+  const bounded = css.slice(0, 128 * 1024);
+  const fontFamilies: string[] = [];
+  for (const match of bounded.matchAll(/font-family\s*:\s*([^;}{]+)/giu)) {
+    const family = compact(match[1], 100).replace(/["']/gu, "");
+    if (family && !/^(?:inherit|initial|unset|sans-serif|serif|monospace)$/iu.test(family)) fontFamilies.push(family);
+  }
+  return {
+    fontFamilies: unique(fontFamilies, 8),
+    colors: unique([...bounded.matchAll(/#[0-9a-f]{6}\b/giu)].map((match) => match[0].toUpperCase()), 12),
   };
 }

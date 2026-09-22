@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import type { BrandEvidenceRecord, EvidenceRole, EvidenceSourceKind } from "../shared/brand-intelligence";
 import { evidenceRecordFromSpan } from "./brand-intelligence";
-import { extractPublicSourceSignals } from "./source-discovery";
+import { extractCssVisualSignals, extractPublicSourceSignals } from "./source-discovery";
 import { assertPublicResolution, parsePublicSource, pinnedFetch, resolvePublic, type AcquisitionDependencies } from "./source-acquisition";
 
 const HTML_LIMIT = 512 * 1024;
-export const RESEARCH_SOURCE_CAPS = { officialPages: 5, socialSources: 2, externalSources: 3 } as const;
+const CSS_LIMIT = 128 * 1024;
+export const RESEARCH_SOURCE_CAPS = { officialPages: 5, socialSources: 2, externalSources: 3, stylesheets: 2 } as const;
 
 export interface ResearchSourceSeed { url: string; role: EvidenceRole; kind: EvidenceSourceKind; candidateId?: string; expectedName?: string }
 export interface ResearchSourceOutcome { url: string; role: EvidenceRole; kind: EvidenceSourceKind; candidateId?: string; status: "complete" | "partial" | "failed"; reason?: string; identity?: { exactNameMatch: boolean; canonicalSameHost: boolean; linkedSocialProfile: boolean } }
@@ -50,6 +51,17 @@ function pageSignalSummary(signals: ReturnType<typeof extractPublicSourceSignals
     signals.description ? `Meta description: ${signals.description}` : "",
     signals.fontFamilies.length ? `Observed CSS font families (not owner-confirmed brand rules): ${signals.fontFamilies.join(", ")}` : "",
     signals.colors.length ? `Observed CSS colors (not owner-confirmed brand rules): ${signals.colors.join(", ")}` : "",
+    signals.metadataImageReferences.length ? `Observed metadata image/logo references (reference-only, not reusable originals): ${signals.metadataImageReferences.join(", ")}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  const summary = parts.join(". ");
+  return summary.length <= 500 ? summary : `${summary.slice(0, 499).trimEnd()}…`;
+}
+
+function stylesheetSignalSummary(signals: ReturnType<typeof extractCssVisualSignals>) {
+  const parts = [
+    signals.fontFamilies.length ? `Observed stylesheet font families (not owner-confirmed brand rules): ${signals.fontFamilies.join(", ")}` : "",
+    signals.colors.length ? `Observed stylesheet colors (not owner-confirmed brand rules): ${signals.colors.join(", ")}` : "",
   ].filter(Boolean);
   if (!parts.length) return "";
   const summary = parts.join(". ");
@@ -83,6 +95,7 @@ export async function acquireResearchSources(seeds: ResearchSourceSeed[], fetche
   const queue = boundedSeeds(seeds);
   const evidence: BrandEvidenceRecord[] = [];
   const outcomes: ResearchSourceOutcome[] = [];
+  const fetchedStylesheets = new Set<string>();
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const seed = queue[cursor]; const url = parsePublicSource(seed.url);
     try {
@@ -93,6 +106,21 @@ export async function acquireResearchSources(seeds: ResearchSourceSeed[], fetche
       const content = signals.visibleText;
       const summary = pageSignalSummary(signals);
       if (summary) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, url.href, summary, 0), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: url.href, content: summary, span: { start: 0, end: summary.length }, fetchedAt }));
+      if (seed.kind === "website" && seed.role === "official") {
+        for (const stylesheetValue of signals.sameOriginStylesheets) {
+          if (fetchedStylesheets.size >= RESEARCH_SOURCE_CAPS.stylesheets || fetchedStylesheets.has(stylesheetValue)) continue;
+          fetchedStylesheets.add(stylesheetValue);
+          try {
+            const stylesheet = parsePublicSource(stylesheetValue);
+            if (stylesheet.origin !== url.origin) continue;
+            const stylesheetAddresses = await resolve(stylesheet.hostname); assertPublicResolution(stylesheetAddresses);
+            const stylesheetResponse = await fetch(stylesheet, stylesheetAddresses, CSS_LIMIT);
+            if (stylesheetResponse.contentType !== "text/css" || stylesheetResponse.bytes.length > CSS_LIMIT) continue;
+            const cssSummary = stylesheetSignalSummary(extractCssVisualSignals(stylesheetResponse.bytes.toString("utf8")));
+            if (cssSummary) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, stylesheet.href, cssSummary, 0), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: stylesheet.href, content: cssSummary, span: { start: 0, end: cssSummary.length }, fetchedAt }));
+          } catch { /* A stylesheet is optional observed evidence; its failure does not fail the source page. */ }
+        }
+      }
       for (const [index, span] of exactSpans(content).entries()) evidence.push(evidenceRecordFromSpan({ id: evidenceId(evidenceNamespace, url.href, content.slice(span.start, span.end), index + 1), sourceKind: seed.kind, sourceRole: seed.role, sourceUrl: url.href, content, span, fetchedAt }));
       const identity = seed.candidateId && seed.expectedName ? {
         exactNameMatch: pageNames(signals.title).includes(normalizedName(seed.expectedName)),
