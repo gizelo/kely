@@ -8,6 +8,7 @@ COPY src ./src
 COPY scripts ./scripts
 COPY public ./public
 COPY assets ./assets
+COPY certs ./certs
 COPY migrations ./migrations
 RUN pnpm exec next build --webpack
 
