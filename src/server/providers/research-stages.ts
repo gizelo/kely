@@ -112,7 +112,7 @@ const profileProperties = Object.fromEntries(["facts", "tone", "palette", "typog
 }]));
 const slideJsonSchema = {
   type: "object", additionalProperties: false, required: ["index", "objective", "copy", "visualDirection", "claimKeys", "materialIds"], properties: {
-    index: { type: "integer" }, objective: { type: "string" }, copy: { type: "string" }, visualDirection: { type: "string" },
+    index: { type: "integer", enum: [1, 2, 3, 4, 5, 6] }, objective: { type: "string" }, copy: { type: "string" }, visualDirection: { type: "string" },
     claimKeys: { type: "array", maxItems: 8, items: { type: "string" } }, materialIds: { type: "array", maxItems: 8, items: { type: "string" } },
   },
 } as const;
@@ -121,7 +121,7 @@ const strategyJsonSchema = {
     kind: { type: "string", enum: ["research_strategy"] },
     brandProfile: { type: "object", additionalProperties: false, required: ["facts", "tone", "palette", "typography", "composition", "allowedMaterials", "prohibitions"], properties: profileProperties },
     plan: { type: "object", additionalProperties: false, required: ["platform", "format", "slideCount", "purpose", "audience", "angle", "slides", "caption", "cta", "visualSystem"], properties: {
-      platform: { type: "string", enum: ["instagram", "linkedin"] }, format: { type: "string", enum: ["single", "carousel"] }, slideCount: { type: "integer" }, purpose: { type: "string" }, audience: { type: "string" }, angle: { type: "string" },
+      platform: { type: "string", enum: ["instagram", "linkedin"] }, format: { type: "string", enum: ["single", "carousel"] }, slideCount: { type: "integer", enum: [1, 2, 3, 4, 5, 6] }, purpose: { type: "string" }, audience: { type: "string" }, angle: { type: "string" },
       slides: { type: "array", minItems: 1, maxItems: 6, items: slideJsonSchema }, caption: { type: "string" }, cta: { type: "string" }, visualSystem: { type: "string" },
     } },
   },
@@ -131,7 +131,7 @@ const extractionJsonSchema = { type: "object", additionalProperties: false, requ
   requiredAssets: { type: "array", maxItems: 12, items: { type: "object", additionalProperties: false, required: ["id", "label", "available"], properties: { id: { type: "string" }, label: { type: "string" }, available: { type: "boolean" } } } },
 } } as const;
 const issueJsonSchema = { type: "object", additionalProperties: false, required: ["code", "severity", "message", "slideIndex"], properties: {
-  code: { type: "string", enum: ["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk"] }, severity: { type: "string", enum: ["warning", "blocking"] }, message: { type: "string" }, slideIndex: { type: "integer" },
+  code: { type: "string", enum: ["unsupported_fact", "brand_mismatch", "weak_angle", "narrative_gap", "readability", "visual_repetition", "missing_original", "regulated_risk"] }, severity: { type: "string", enum: ["warning", "blocking"] }, message: { type: "string" }, slideIndex: { type: "integer", enum: [0, 1, 2, 3, 4, 5, 6] },
 } } as const;
 
 export const RESEARCH_STAGE_JSON_SCHEMAS = Object.freeze({
@@ -147,7 +147,7 @@ export function extractionStageAttempt(input: ResearchStageAttemptInput) {
 }
 
 export function strategyStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and publication plan that follows the owner's exact platform and explicit format or slide-count request. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, proof, prices, offers, product capabilities, testimonials, or regulated claims. The plan must be specific to the supplied idea and audience: use a clear angle, a purposeful narrative progression, a distinct job and visual direction for every slide, a coherent caption and CTA, and available brand materials where relevant. Do not return placeholder labels, merely restate the request, or repeat the same copy, objective, or visual direction across slides." });
+  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v1", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and publication plan that follows the owner's exact platform and explicit format or slide-count request. A single post must have exactly one slide; a carousel must have two to six slides, and slideCount must exactly equal the number of returned slides. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, proof, prices, offers, product capabilities, testimonials, or regulated claims. The plan must be specific to the supplied idea and audience: use a clear angle, a purposeful narrative progression, a distinct job and visual direction for every slide, a coherent caption and CTA, and available brand materials where relevant. Do not return placeholder labels, merely restate the request, or repeat the same copy, objective, or visual direction across slides." });
 }
 
 export function checkStageAttempt(input: ResearchStageAttemptInput) {
@@ -271,6 +271,15 @@ function explicitSlideCount(idea: string) {
 function explicitFormat(idea: string): "single" | "carousel" | null {
   if (/\bcarousel\b|\bкарусел[ьи]\b|\bkarussell\b/iu.test(idea)) return "carousel";
   if (/\b(?:single(?:[- ](?:image|post))?|one[- ](?:image|post))\b|\b(?:одиночн(?:ый|ое)\s+(?:пост|изображение)|один\s+(?:пост|слайд))\b|\b(?:einzel(?:bild|beitrag)|ein\s+bild)\b/iu.test(idea)) return "single";
+  return null;
+}
+
+export function researchBriefFormatConflict(idea: string) {
+  const count = explicitSlideCount(idea);
+  const format = explicitFormat(idea);
+  if (count === null || format === null) return null;
+  if (format === "single" && count !== 1) return "A single post can contain only one slide. Should Kely make one post or a carousel?";
+  if (format === "carousel" && count < 2) return "A carousel needs at least two slides. Should Kely make one post or a carousel?";
   return null;
 }
 

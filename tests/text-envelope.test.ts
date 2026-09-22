@@ -9,6 +9,13 @@ test("strict schemas preserve bounded array cardinality", () => {
   assert.throws(() => buildTextRequest({ model: "gpt-5.6-luna", input: "{}", instructions: "Return items.", jsonSchema: { name: "bad_items", schema: { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array", minItems: 4, maxItems: 3, items: { type: "string" } } } } } }), /item bounds/);
 });
 
+test("strict schemas preserve bounded integer enums", () => {
+  const request = buildTextRequest({ model: "gpt-5.6-luna", input: "{}", instructions: "Return a valid count.", jsonSchema: { name: "bounded_count", schema: { type: "object", additionalProperties: false, required: ["count"], properties: { count: { type: "integer", enum: [1, 2, 3, 4, 5, 6] } } } } });
+  assert.equal(request.text.format.type, "json_schema");
+  if (request.text.format.type === "json_schema") assert.deepEqual(request.text.format.schema.properties, { count: { type: "integer", enum: [1, 2, 3, 4, 5, 6] } });
+  assert.throws(() => buildTextRequest({ model: "gpt-5.6-luna", input: "{}", instructions: "Return a valid count.", jsonSchema: { name: "bad_count", schema: { type: "object", additionalProperties: false, required: ["count"], properties: { count: { type: "integer", enum: [1, 1] } } } } }), /must be unique/u);
+});
+
 const input = { model: "gpt-5.6-luna", input: "Write a short caption about our café.", instructions: "Use only the provided facts." };
 
 function response(overrides: Record<string, unknown> = {}) {

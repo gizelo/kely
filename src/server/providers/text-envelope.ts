@@ -108,8 +108,10 @@ function safeSchema(value: unknown): Schema {
       if (node.maxItems !== undefined) result.maxItems = integer(node.maxItems, 32, "schema maxItems");
       ensure((result.minItems as number | undefined) === undefined || (result.maxItems as number | undefined) === undefined || (result.minItems as number) <= (result.maxItems as number), "schema item bounds are inconsistent");
     } else if (node.enum !== undefined) {
-      ensure(type === "string" && Array.isArray(node.enum) && node.enum.length >= 1 && node.enum.length <= 32, "only bounded string enums are supported");
-      result.enum = node.enum.map(item => boundedString(item, 128, "schema enum value"));
+      ensure((type === "string" || type === "integer") && Array.isArray(node.enum) && node.enum.length >= 1 && node.enum.length <= 32, "only bounded string or integer enums are supported");
+      result.enum = type === "string"
+        ? node.enum.map(item => boundedString(item, 128, "schema enum value"))
+        : node.enum.map(item => integer(item, 1_000_000, "schema enum value", -1_000_000));
       ensure(new Set(result.enum).size === result.enum.length, "schema enum values must be unique");
     }
     const permitted = type === "object" ? ["type", "description", "properties", "required", "additionalProperties"] : type === "array" ? ["type", "description", "items", "minItems", "maxItems"] : ["type", "description", "enum"];

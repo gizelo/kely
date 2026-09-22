@@ -6,7 +6,7 @@ import { assembleResearchContext } from "./brand-intelligence-context";
 import { canonicalEvidenceUrl, classifyResearchReadiness, createBrandIntelligenceSnapshot, evidenceRecordFromSpan } from "./brand-intelligence";
 import { acquireResearchSources, type ResearchAcquisitionResult, type ResearchSourceSeed } from "./research-source-acquisition";
 import type { EntitySearchInput, EntitySearchResult } from "./providers/research-dispatcher";
-import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, strategyStageAttempt } from "./providers/research-stages";
+import { checkStageAttempt, extractionStageAttempt, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, researchBriefFormatConflict, strategyStageAttempt } from "./providers/research-stages";
 import { analysisRequest, parseAnalysis, type AnalysisInput } from "./providers/analysis";
 import { bindResearchAttempt } from "./budget/research-package";
 import { inputHash } from "./paid-input";
@@ -51,6 +51,20 @@ function suppliedHostNameMatches(requestedName: string, candidateName: string) {
   const requested = normalizedEntityName(requestedName);
   const candidate = normalizedEntityName(candidateName);
   return requested.length > 0 && (candidate === requested || candidate.startsWith(`${requested} `));
+}
+
+const SAFE_PIPELINE_ERROR_CODES = new Set([
+  "contradicted_provenance_invalid", "external_context_cannot_support_brand_fact", "inferred_provenance_invalid", "proposed_fact_invalid", "proposed_provenance_invalid",
+  "research_check_correction_invalid", "research_check_pass_invalid", "research_claim_duplicate", "research_evidence_duplicate", "research_evidence_missing",
+  "research_material_persistence_unavailable", "research_material_reservation_invalid", "research_material_reservation_unexpected", "research_package_reservation_invalid",
+  "research_plan_claim_missing", "research_plan_count_mismatch", "research_plan_format_mismatch", "research_plan_placeholder", "research_plan_platform_mismatch",
+  "research_plan_request_restatement", "research_plan_shape_invalid", "research_profile_fact_missing", "research_slide_index_invalid", "research_stage_context_too_large",
+  "research_stage_json_invalid", "research_stage_message_invalid", "research_stage_output_invalid", "user_provenance_invalid", "verified_provenance_invalid",
+]);
+
+export function safePipelineErrorCode(error: unknown) {
+  const value = error instanceof Error ? error.message : "research_pipeline_failed";
+  return SAFE_PIPELINE_ERROR_CODES.has(value) ? value : "research_pipeline_failed";
 }
 
 export function materialObservationEvidence(runId: string, materialId: string, content: string, fetchedAt: string) {
@@ -150,6 +164,12 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
       const result = await dependencies.store.appendStatus(ownerId, runId, "needs_input", { questions: readiness.questions.slice(0, 3), packageId: reservation.id });
       await dependencies.closeFromDurableEvidence(result); return result;
     }
+    const formatConflict = researchBriefFormatConflict(input.idea);
+    if (formatConflict) {
+      await dependencies.store.acceptSnapshot(ownerId, runId, base);
+      const result = await dependencies.store.appendStatus(ownerId, runId, "needs_input", { questions: [formatConflict], packageId: reservation.id });
+      await dependencies.closeFromDurableEvidence(result); return result;
+    }
     await dependencies.store.appendStatus(ownerId, runId, "strategizing", { packageId: reservation.id });
     const strategyRaw = await dependencies.gateway.dispatch(strategyStageAttempt({ ownerId, runId, context: stageContext({ input, snapshot: base }), reservation }));
     const strategy = parseStrategyDraftStageResponse(strategyRaw.response);
@@ -162,7 +182,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
     await dependencies.closeFromDurableEvidence(result); return result;
   } catch (error) {
     const uncertain = (error as { code?: unknown })?.code === "attempt_uncertain";
-    const result = await dependencies.store.appendStatus(ownerId, runId, uncertain ? "uncertain" : "failed", { reason: uncertain ? "provider_outcome_unknown" : "research_pipeline_failed", packageId: reservation.id });
+    const result = await dependencies.store.appendStatus(ownerId, runId, uncertain ? "uncertain" : "failed", { reason: uncertain ? "provider_outcome_unknown" : "research_pipeline_failed", ...(uncertain ? {} : { errorCode: safePipelineErrorCode(error) }), packageId: reservation.id });
     if (!uncertain) await dependencies.closeFromDurableEvidence(result);
     return result;
   }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { researchPackageInput } from "../src/server/budget/research-package";
 import type { BrandEvidenceRecord, BrandIntelligenceClaim } from "../src/shared/brand-intelligence";
-import { checkStageAttempt, extractionStageAttempt, MAX_PLAN_CRITIC_REVISIONS, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, parseStrategyStageResponse, strategyStageAttempt, type ResearchStrategyOutput } from "../src/server/providers/research-stages";
+import { checkStageAttempt, extractionStageAttempt, MAX_PLAN_CRITIC_REVISIONS, parseCheckStageResponse, parseExtractionStageResponse, parseStrategyDraftStageResponse, parseStrategyStageResponse, RESEARCH_STAGE_JSON_SCHEMAS, researchBriefFormatConflict, strategyStageAttempt, type ResearchStrategyOutput } from "../src/server/providers/research-stages";
 
 const ownerId = "owner-1";
 const runId = "00000000-0000-4000-8000-000000000001";
@@ -51,6 +51,18 @@ test("all structured research stages build bounded attempts inside one package",
   const extractionInstructions = "instructions" in attempts[0].request ? attempts[0].request.instructions : "";
   assert.match(String(extractionInstructions), /only for an exact original without which/u);
   assert.match(String(extractionInstructions), /reference-only/u);
+});
+
+test("the provider schema enforces the product's six-slide boundary", () => {
+  const plan = RESEARCH_STAGE_JSON_SCHEMAS.strategy.properties.plan;
+  assert.deepEqual(plan.properties.slideCount, { type: "integer", enum: [1, 2, 3, 4, 5, 6] });
+  assert.deepEqual(plan.properties.slides.items.properties.index, { type: "integer", enum: [1, 2, 3, 4, 5, 6] });
+});
+
+test("contradictory explicit format and count stop before strategy", () => {
+  assert.match(researchBriefFormatConflict("Create a one-slide carousel") ?? "", /at least two/u);
+  assert.match(researchBriefFormatConflict("Create a single post with 3 slides") ?? "", /only one slide/u);
+  assert.equal(researchBriefFormatConflict("Create a 3-slide carousel"), null);
 });
 
 test("extraction preserves provenance and drops external context as factual support", () => {
