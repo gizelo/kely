@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { GenerationOrigin } from "../shared/contracts";
+import { secureDatabaseUrl } from "./database-url";
 import { assertLiveDispatchApproved } from "./providers/live-gate";
 import { runtimeSettings } from "./runtime-settings";
 
@@ -20,8 +21,9 @@ export function generationMode(): GenerationOrigin {
 
 generationMode();
 const settings = runtimeSettings(process.env);
+const databaseUrl = process.env.KELY_DATABASE_URL ?? "postgresql://kely:kely_local_only@127.0.0.1:55432/kely_fixture";
 export const config = {
-  databaseUrl: process.env.KELY_DATABASE_URL ?? "postgresql://kely:kely_local_only@127.0.0.1:55432/kely_fixture",
+  databaseUrl: secureDatabaseUrl(databaseUrl, settings.cloud),
   baseUrl: settings.baseUrl,
   cloud: settings.cloud,
   origins: settings.origins,
