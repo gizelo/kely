@@ -49,13 +49,13 @@ test("all structured research stages build bounded attempts inside one package",
   assert.equal(MAX_PLAN_CRITIC_REVISIONS, 2);
 });
 
-test("extraction preserves provenance and rejects external context as factual support", () => {
+test("extraction preserves provenance and drops external context as factual support", () => {
   const parsed = parseExtractionStageResponse(response(extraction()), [official, user, external]);
   assert.equal(parsed.attributions[0].provenance, "verified");
   assert.equal(parsed.claims[0].status, "observed");
 
   const bad = extraction({ claims: [{ key: "category", kind: "fact", value: "Software", provenance: "inferred", confidence: "medium", evidenceIds: [external.id] }] });
-  assert.throws(() => parseExtractionStageResponse(response(bad), [official, external]), /external_context_cannot_support_brand_fact/u);
+  assert.deepEqual(parseExtractionStageResponse(response(bad), [official, external]).claims, []);
   const proposedFact = extraction({ claims: [{ key: "price", kind: "price", value: "$10", provenance: "proposed", confidence: "low", evidenceIds: [] }] });
   assert.throws(() => parseExtractionStageResponse(response(proposedFact), [official]), /proposed_fact_invalid/u);
 });

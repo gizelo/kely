@@ -186,7 +186,12 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
   const parsed = researchExtractionSchema.parse(structuredOutput(raw));
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   if (evidence.size !== evidenceRecords.length) throw new Error("research_evidence_duplicate");
-  const result = { ...parsed, claims: parsed.claims.map((item) => {
+  const result = { ...parsed, claims: parsed.claims.flatMap((item) => {
+    if (item.kind !== "creative" && item.evidenceIds.some((id) => {
+      const record = evidence.get(id);
+      if (!record) throw new Error("research_evidence_missing");
+      return record.sourceRole === "external_context";
+    })) return [];
     if (item.kind !== "creative") return item;
     if (item.provenance === "proposed") return { ...item, evidenceIds: [] };
     if (item.provenance !== "user_provided") return item;
@@ -195,7 +200,7 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
       if (!record) throw new Error("research_evidence_missing");
       return record.sourceRole === "user_provided";
     });
-    return evidenceIds.length ? { ...item, evidenceIds } : { ...item, provenance: "proposed" as const, evidenceIds: [] };
+    return [evidenceIds.length ? { ...item, evidenceIds } : { ...item, provenance: "proposed" as const, evidenceIds: [] }];
   }) };
   unique(result.claims.map((item) => item.key), "research_claim_duplicate");
   result.claims.forEach((item) => {
