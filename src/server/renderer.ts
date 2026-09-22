@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { PostgresPrivateStorage, usesCloudStorage } from "./private-storage";
+import { privateStorage, usesCloudStorage } from "./private-storage";
 import path from "node:path";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
@@ -329,7 +329,7 @@ export async function persistSlideAsset(
   const id = stableAssetId(operationId, slideId);
   const filename = `${id}.png`;
   if (usesCloudStorage()) {
-    await new PostgresPrivateStorage(pool).put("asset", filename, bytes, operationId);
+    await privateStorage(pool).put("asset", filename, bytes, operationId);
   } else {
     await mkdir(config.assetRoot, { recursive: true, mode: 0o700 });
     const destination = path.join(config.assetRoot, filename);
@@ -359,7 +359,7 @@ export async function readAsset(ownerId: string, id: string) {
     500,
   );
   const bytes = usesCloudStorage()
-    ? await new PostgresPrivateStorage(pool).get("asset", asset.filename)
+    ? await privateStorage(pool).get("asset", asset.filename)
     : await readFile(path.join(config.assetRoot, asset.filename));
   requireCondition(bytes, "not_found", "That asset is not available.", 404);
   return {

@@ -6,6 +6,7 @@ services:
     region: frankfurt
     autoDeploy: false
     healthCheckPath: /api/health
+    preDeployCommand: node --import tsx scripts/migrate.ts
     envVars:
       - key: KELY_RUNTIME
         value: cloud
@@ -17,6 +18,12 @@ services:
         sync: false
       - key: KELY_DATABASE_URL
         sync: false
+      - key: KELY_STORAGE_URL
+        sync: false
+      - key: KELY_STORAGE_SERVICE_KEY
+        sync: false
+      - key: KELY_STORAGE_BUCKET
+        value: kely-private
       - key: KELY_AUTH_SECRET
         generateValue: true
       - key: KELY_BUDGET_DESTINATION

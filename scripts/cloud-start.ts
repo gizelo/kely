@@ -5,6 +5,7 @@ import { pool } from "../src/server/db";
 import { assertSchemaReady } from "./lib/schema-ready";
 import { reconcileInterruptedResearchRuns } from "../src/server/research-recovery";
 import { startWorker } from "../src/server/worker";
+import { reconcilePrivateStorage } from "../src/server/private-storage";
 
 const children: ChildProcess[] = [];
 let stopping = false;
@@ -32,6 +33,9 @@ async function main() {
   startupStage = "schema readiness";
   await assertSchemaReady(pool);
   console.log("Kely cloud schema is ready.");
+  startupStage = "private storage reconciliation";
+  await reconcilePrivateStorage(pool);
+  console.log("Kely private storage is ready.");
   if (generationMode() === "openai") {
     startupStage = "budget readiness";
     const budget = new CloudBudgetStore(pool, process.env.KELY_BUDGET_DESTINATION ?? "");

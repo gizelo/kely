@@ -8,7 +8,7 @@ import test from "node:test";
 import { Pool } from "pg";
 import { BudgetStore } from "../../src/server/budget/store";
 import { CloudBudgetStore } from "../../src/server/budget/cloud-store";
-import { PostgresPrivateStorage, reserveOutputStorage, releaseOutputStorage } from "../../src/server/private-storage";
+import { PostgresPrivateStorage, SupabasePrivateStorage, reconcilePrivateStorage, reserveOutputStorage, releaseOutputStorage, type ObjectTransport } from "../../src/server/private-storage";
 import { initializeFakeBudget, fakeAttempt, fakeResponse } from "../helpers/budget-fixture";
 
 test("cloud import preserves exposure, serializes dispatch, saves private bytes and atomically rejects capacity overflow", async () => {
@@ -21,6 +21,11 @@ test("cloud import preserves exposure, serializes dispatch, saves private bytes 
   try {
     await admin.query(`CREATE SCHEMA ${schema}`);
     await pool.query(await readFile(new URL("../../migrations/011_cloud_foundation.sql", import.meta.url), "utf8"));
+    const objectMigration = await readFile(new URL("../../migrations/018_private_object_storage.sql", import.meta.url), "utf8");
+    await pool.query("INSERT INTO private_blob(namespace,name,content,sha256) VALUES('material','legacy.png',$1,$2)", [Buffer.from("legacy"), "c49fea7425fa7f8699897a97c159c6690267d9003bb78c53d94f50d2f4c5c56e"]);
+    await assert.rejects(pool.query(objectMigration), /clean cutover/u);
+    await pool.query("DELETE FROM private_blob");
+    await pool.query(objectMigration);
     const historical = fakeAttempt();
     local.claim(historical);
     local.markUncertain(historical.key, "timeout");
@@ -57,6 +62,69 @@ test("cloud import preserves exposure, serializes dispatch, saves private bytes 
     assert.equal(Number((await pool.query("SELECT reserved_bytes FROM cloud_storage_quota")).rows[0].reserved_bytes), 0);
     assert.deepEqual(await storage.get("asset", "test.png"), Buffer.from("fixture image bytes"));
     await assert.rejects(storage.put("asset", "test.png", Buffer.from("changed")));
+    const objectBytes = new Map<string, Buffer>();
+    const deleted: string[] = [];
+    let failDelete = false;
+    const objects: ObjectTransport = {
+      async put(key, bytes) { if (objectBytes.has(key)) throw new Error("duplicate"); objectBytes.set(key, Buffer.from(bytes)); },
+      async get(key) { return objectBytes.get(key); },
+      async delete(key) { if (failDelete) throw new Error("delete unavailable"); deleted.push(key); objectBytes.delete(key); },
+    };
+    const supabase = new SupabasePrivateStorage(pool, objects);
+    const objectName = "00000000-0000-4000-a000-000000000001.png";
+    await supabase.put("material", objectName, Buffer.from("stored outside postgres"));
+    await supabase.put("material", objectName, Buffer.from("stored outside postgres"));
+    assert.deepEqual(await supabase.get("material", objectName), Buffer.from("stored outside postgres"));
+    await assert.rejects(supabase.put("material", objectName, Buffer.from("changed")), /different content/u);
+    objectBytes.set(`material/${objectName}`, Buffer.from("corrupt"));
+    await assert.rejects(supabase.put("material", objectName, Buffer.from("stored outside postgres")), /integrity failed/u);
+    objectBytes.set(`material/${objectName}`, Buffer.from("stored outside postgres"));
+    await pool.query("CREATE FUNCTION fail_private_object_ready() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ready failure'; END $$");
+    await pool.query("CREATE TRIGGER fail_private_object BEFORE UPDATE ON private_object FOR EACH ROW WHEN (NEW.state = 'ready' AND NEW.name IN ('00000000-0000-4000-a000-000000000002.png','00000000-0000-4000-a000-000000000003.png')) EXECUTE FUNCTION fail_private_object_ready()")
+    const failedName = "00000000-0000-4000-a000-000000000002.png";
+    await reserveOutputStorage(pool, "restart-ready");
+    await assert.rejects(supabase.put("asset", failedName, Buffer.from("durable pending"), "restart-ready"), /ready failure/u);
+    assert.equal(objectBytes.has(`asset/${failedName}`), true);
+    assert.equal((await pool.query("SELECT state FROM private_object WHERE name=$1", [failedName])).rows[0].state, "pending");
+    await pool.query("DROP TRIGGER fail_private_object ON private_object");
+    const readyAssetName = "00000000-0000-4000-a000-000000000006.png";
+    await supabase.put("asset", readyAssetName, Buffer.from("orphan ready asset"));
+    await reconcilePrivateStorage(pool, objects);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [failedName])).rowCount, 0);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [readyAssetName])).rowCount, 0);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [objectName])).rowCount, 0);
+    assert.equal(Number((await pool.query("SELECT remaining_bytes FROM cloud_output_reservation WHERE operation_id='restart-ready'")).rows[0].remaining_bytes), 64_000_000);
+    const absentName = "00000000-0000-4000-a000-000000000003.png";
+    await reserveOutputStorage(pool, "restart-absent");
+    await pool.query("CREATE TRIGGER fail_private_object BEFORE UPDATE ON private_object FOR EACH ROW WHEN (NEW.state = 'ready' AND NEW.name = '00000000-0000-4000-a000-000000000003.png') EXECUTE FUNCTION fail_private_object_ready()")
+    await assert.rejects(supabase.put("asset", absentName, Buffer.from("lost response"), "restart-absent"), /ready failure/u);
+    await pool.query("DROP TRIGGER fail_private_object ON private_object");
+    objectBytes.delete(`asset/${absentName}`);
+    await reconcilePrivateStorage(pool, objects);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [absentName])).rowCount, 0);
+    assert.equal(Number((await pool.query("SELECT remaining_bytes FROM cloud_output_reservation WHERE operation_id='restart-absent'")).rows[0].remaining_bytes), 64_000_000);
+    const unavailableName = "00000000-0000-4000-a000-000000000005.png";
+    await reserveOutputStorage(pool, "restart-unavailable");
+    await pool.query("CREATE TRIGGER fail_private_object BEFORE UPDATE ON private_object FOR EACH ROW WHEN (NEW.state = 'ready' AND NEW.name = '00000000-0000-4000-a000-000000000005.png') EXECUTE FUNCTION fail_private_object_ready()")
+    await assert.rejects(supabase.put("asset", unavailableName, Buffer.from("unknown download"), "restart-unavailable"), /ready failure/u);
+    await pool.query("DROP TRIGGER fail_private_object ON private_object");
+    const quotaBeforeFailure = (await pool.query("SELECT used_bytes,reserved_bytes FROM cloud_storage_quota")).rows[0];
+    const unavailable: ObjectTransport = { ...objects, async get() { throw new Error("storage timeout"); } };
+    await assert.rejects(reconcilePrivateStorage(pool, unavailable), /storage timeout/u);
+    assert.equal((await pool.query("SELECT state FROM private_object WHERE name=$1", [unavailableName])).rows[0].state, "pending");
+    assert.deepEqual((await pool.query("SELECT used_bytes,reserved_bytes FROM cloud_storage_quota")).rows[0], quotaBeforeFailure);
+    assert.equal(objectBytes.has(`asset/${unavailableName}`), true);
+    await reconcilePrivateStorage(pool, objects);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [unavailableName])).rowCount, 0);
+    assert.equal(Number((await pool.query("SELECT remaining_bytes FROM cloud_output_reservation WHERE operation_id='restart-unavailable'")).rows[0].remaining_bytes), 64_000_000);
+    const deleteName = "00000000-0000-4000-a000-000000000004.png";
+    await supabase.put("material", deleteName, Buffer.from("delete retry"));
+    failDelete = true;
+    await assert.rejects(supabase.discardUnlinkedMaterial(deleteName), /delete unavailable/u);
+    assert.equal((await pool.query("SELECT state FROM private_object WHERE name=$1", [deleteName])).rows[0].state, "delete_pending");
+    failDelete = false;
+    await reconcilePrivateStorage(pool, objects);
+    assert.equal((await pool.query("SELECT 1 FROM private_object WHERE name=$1", [deleteName])).rowCount, 0);
     await pool.query("UPDATE cloud_storage_quota SET used_bytes=199999999 WHERE singleton");
     const writes = await Promise.allSettled([storage.put("material", "one.png", Buffer.from("1")), storage.put("material", "two.png", Buffer.from("2"))]);
     assert.equal(writes.filter((result) => result.status === "fulfilled").length, 1);

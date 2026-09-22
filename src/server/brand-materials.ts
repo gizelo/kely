@@ -4,7 +4,7 @@ import { mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { AppError, requireCondition } from "./errors";
-import { PostgresPrivateStorage, usesCloudStorage } from "./private-storage";
+import { privateStorage, usesCloudStorage } from "./private-storage";
 
 export const materialRoot = path.resolve(".local/brand-materials");
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -59,7 +59,7 @@ export async function storeMaterial(bytes: Buffer, root = materialRoot) {
   if (usesCloudStorage()) {
     const { pool } = await import("./db");
     const name = `${randomUUID()}.png`;
-    await new PostgresPrivateStorage(pool).put("material", name, bytes);
+    await privateStorage(pool).put("material", name, bytes);
     return name;
   }
   await mkdir(root, { recursive: true, mode: 0o700 });
@@ -73,7 +73,7 @@ export async function storeMaterial(bytes: Buffer, root = materialRoot) {
 export async function discardMaterial(name: string, root = materialRoot) {
   if (usesCloudStorage()) {
     const { pool } = await import("./db");
-    await new PostgresPrivateStorage(pool).discardUnlinkedMaterial(name);
+    await privateStorage(pool).discardUnlinkedMaterial(name);
   } else await unlink(path.join(root, name));
 }
 export async function materialBytes(name: string, hash: string, root = materialRoot) {
@@ -81,7 +81,7 @@ export async function materialBytes(name: string, hash: string, root = materialR
   let bytes: Buffer;
   if (usesCloudStorage()) {
     const { pool } = await import("./db");
-    const saved = await new PostgresPrivateStorage(pool).get("material", name);
+    const saved = await privateStorage(pool).get("material", name);
     requireCondition(saved && saved.length <= MAX_MATERIAL_BYTES && createHash("sha256").update(saved).digest("hex") === hash, "material_unavailable", "Material integrity could not be verified.", 409);
     return saved;
   }
