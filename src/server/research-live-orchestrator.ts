@@ -29,6 +29,7 @@ export interface LiveResearchDependencies {
   persistMaterialAnalysis?(proposal: AnalysisProposal, requestHash: string): Promise<void>;
   acquire?(seeds: ResearchSourceSeed[], fetchedAt: string): Promise<ResearchAcquisitionResult>;
   closeFromDurableEvidence(run: ResearchRunView): Promise<void>;
+  resolvedAssetKeys?: string[];
 }
 
 function exactReservation(value: BudgetPackageInput, ownerId: string, runId: string) {
@@ -143,7 +144,7 @@ export async function runLiveResearch(ownerId: string, runId: string, input: Bra
       return { ...candidate, evidenceIds: [...new Set([...candidate.evidenceIds, ...officialIds])], signals: { ...candidate.signals, exactNameMatch: localProof || suppliedNameProof || candidate.signals.exactNameMatch, crossLinkedProfile: localProof, officialSiteClaim: (suppliedHosts.has(hostname) || localProof) && officialIds.length > 0 } };
     });
     const base = createBrandIntelligenceSnapshot({ id: randomUUID(), version: 1, createdAt: new Date().toISOString(), query: { businessName: input.businessName, userSuppliedUrls: input.userSuppliedUrls }, evidence, entityCandidates, claims: extraction.claims, requiredAssets: extraction.requiredAssets });
-    const readiness = classifyResearchReadiness(base);
+    const readiness = classifyResearchReadiness(base, [], dependencies.resolvedAssetKeys);
     if (!readiness.ready) {
       await dependencies.store.acceptSnapshot(ownerId, runId, base);
       const result = await dependencies.store.appendStatus(ownerId, runId, "needs_input", { questions: readiness.questions.slice(0, 3), packageId: reservation.id });

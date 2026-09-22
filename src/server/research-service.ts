@@ -139,6 +139,7 @@ async function defaultLiveExecutor(viewer: Viewer, run: ResearchRunView, durable
   try {
     return await runLiveResearch(viewer.id, run.id, research, reservationInput, {
       store: liveStore, gateway, materialInput,
+      resolvedAssetKeys: (durable.answers ?? []).filter((item) => item.code === "missing_asset").map((item) => item.key),
       async persistMaterialAnalysis(proposal, requestHash) {
         for (const observation of proposal.observations) {
           const selected = materialInput!.selected.find((item) => item.id === observation.materialId)!;
