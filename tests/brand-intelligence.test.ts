@@ -65,10 +65,19 @@ test("creative preferences never block research readiness", () => {
 });
 
 test("an answered missing asset does not block the superseding research run", () => {
-  const state = snapshot({ requiredAssets: [{ id: "logo", label: "brand logo", available: false }] });
+  const state = snapshot({ requiredAssets: [{ id: "standalone-logo", label: "Standalone Girex logo", available: false }] });
   const readiness = classifyResearchReadiness(state, [], ["logo"]);
   assert.equal(readiness.ready, true);
   assert.deepEqual(readiness.questions, []);
+});
+
+test("answering a logo question does not suppress an unrelated missing asset", () => {
+  for (const id of ["product-screenshot", "partner-logo", "certification-logo", "wordmark"]) {
+    const state = snapshot({ requiredAssets: [{ id, label: id, available: false }] });
+    const readiness = classifyResearchReadiness(state, [], ["logo"]);
+    assert.equal(readiness.ready, false);
+    assert.equal(readiness.questions[0].key, id);
+  }
 });
 
 test("hostile page text remains bounded evidence and cannot nominate an entity or URL", () => {

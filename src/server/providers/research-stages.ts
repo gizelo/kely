@@ -187,11 +187,14 @@ export function parseExtractionStageResponse(raw: unknown, evidenceRecords: Bran
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
   if (evidence.size !== evidenceRecords.length) throw new Error("research_evidence_duplicate");
   const result = { ...parsed, claims: parsed.claims.flatMap((item) => {
-    if (item.kind !== "creative" && item.evidenceIds.some((id) => {
+    const records = item.evidenceIds.map((id) => {
       const record = evidence.get(id);
       if (!record) throw new Error("research_evidence_missing");
-      return record.sourceRole === "external_context";
-    })) return [];
+      return record;
+    });
+    if (item.kind !== "creative" && records.some((record) => record.sourceRole === "external_context")) return [];
+    if (item.kind !== "creative" && records.some((record) => record.sourceKind === "upload")) return [];
+    if (item.kind !== "creative" && item.provenance === "verified" && records.some((record) => record.sourceRole !== "official")) return [];
     if (item.kind !== "creative") return item;
     if (item.provenance === "proposed") return { ...item, evidenceIds: [] };
     if (item.provenance !== "user_provided") return item;

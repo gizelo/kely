@@ -14,6 +14,7 @@ function response(value: unknown) {
 
 const official: BrandEvidenceRecord = { id: "official-1", sourceKind: "website", sourceRole: "official", sourceUrl: "https://example.com/", excerpt: "Example makes scheduling software.", span: { start: 0, end: 34 }, contentHash: "b".repeat(64), fetchedAt: "2026-09-21T10:00:00.000Z" };
 const user: BrandEvidenceRecord = { ...official, id: "user-1", sourceKind: "user", sourceRole: "user_provided", sourceUrl: "https://fixture.kely.invalid/user" };
+const upload: BrandEvidenceRecord = { ...official, id: "upload-1", sourceKind: "upload", sourceRole: "user_provided", sourceUrl: "https://kely.invalid/material/material-1" };
 const external: BrandEvidenceRecord = { ...official, id: "external-1", sourceKind: "directory", sourceRole: "external_context", sourceUrl: "https://directory.example/business" };
 
 function extraction(overrides: Record<string, unknown> = {}) {
@@ -78,6 +79,23 @@ test("creative user guidance cannot inherit official attribution", () => {
   assert.deepEqual(downgraded.attributions[0].evidenceIds, []);
   assert.equal(downgraded.attributions[0].provenance, "proposed");
   assert.equal(downgraded.claims[0].status, "proposed");
+});
+
+test("upload-backed non-creative claims cannot become plan inputs", () => {
+  for (const kind of ["fact", "price", "offer", "regulated"] as const) {
+    for (const evidenceIds of [[upload.id], [upload.id, user.id]]) {
+      const output = extraction({ claims: [{ key: `uploaded_${kind}`, kind, value: "Untrusted claim from an uploaded image", provenance: "user_provided", confidence: "high", evidenceIds }] });
+      const parsed = parseExtractionStageResponse(response(output), [upload, user]);
+      assert.deepEqual(parsed.attributions, []);
+      assert.deepEqual(parsed.claims, []);
+    }
+  }
+});
+
+test("verified business facts without official evidence are dropped", () => {
+  const output = extraction({ claims: [{ key: "official_product_description", kind: "fact", value: "Official product description", provenance: "verified", confidence: "high", evidenceIds: [user.id] }] });
+  const parsed = parseExtractionStageResponse(response(output), [user]);
+  assert.deepEqual(parsed.claims, []);
 });
 
 test("strategy permits proposed creative direction but only references known facts", () => {

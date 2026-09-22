@@ -164,7 +164,11 @@ function claimQuestion(key: string, kind: BrandClaimKind): ResearchQuestion {
 
 export function classifyResearchReadiness(snapshot: BrandIntelligenceSnapshot, requiredFactKeys: string[] = [], resolvedAssetKeys: string[] = []): ResearchReadiness {
   const questions: ResearchQuestion[] = [];
-  const resolvedAssets = new Set(resolvedAssetKeys);
+  const assetCategory = (value: string) => {
+    const normalized = value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+    return normalized === "logo" || normalized === "standalone-logo" ? "logo" : normalized;
+  };
+  const resolvedAssets = new Set(resolvedAssetKeys.map(assetCategory));
   if (snapshot.entityResolution.status !== "resolved") questions.push({ code: "entity_conflict", key: "business_identity", prompt: "Which exact business is this? Please share its official website or profile." });
 
   for (const key of [...new Set(requiredFactKeys)]) {
@@ -176,7 +180,7 @@ export function classifyResearchReadiness(snapshot: BrandIntelligenceSnapshot, r
     if (!matching.some(usableClaim)) questions.push(claimQuestion(key, matching[0]?.kind ?? "fact"));
   }
 
-  for (const asset of snapshot.requiredAssets.filter((item) => !item.available && !resolvedAssets.has(item.id))) {
+  for (const asset of snapshot.requiredAssets.filter((item) => !item.available && !resolvedAssets.has(assetCategory(item.id)))) {
     questions.push({ code: "missing_asset", key: asset.id, prompt: `Please upload the exact ${asset.label}; Kely must not recreate or guess it.` });
   }
 
