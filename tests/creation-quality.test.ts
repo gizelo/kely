@@ -110,6 +110,20 @@ test("research-aware creation freezes the exact ready snapshot while legacy v15 
   assert.throws(() => verifyCreationInput({ ...current, schemaVersion: 15 }, inputHash({ ...current, schemaVersion: 15 }) as string), { code: "creation_snapshot_invalid" });
 });
 
+test("material-free researched posts use their local visual system instead of an unrelated saved brand palette", () => {
+  const strategy: any = structuredClone(researchStrategy());
+  strategy.plan.format = "single";
+  strategy.plan.slideCount = 1;
+  strategy.plan.slides = [{ index: 1, objective: "Calm consultation", copy: "Questions before your appointment?", visualDirection: "Light neutral background, dark sans-serif type and one soft green accent (#85A830).", claimKeys: [], materialIds: [] }];
+  strategy.plan.visualSystem = "Light neutral background with dark type and a restrained green accent.";
+  strategy.brandProfile.palette = [{ key: "accent", value: "Observed soft green #85A830", provenance: "inferred", confidence: "medium", evidenceIds: ["evidence-1"] }];
+  const research = { strategy, planHash: "f".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.deepEqual(mapped.artDirection.direction.palette, { background: "#F7F7F2", foreground: "#17191C", accent: "#85A830", muted: "#DDE3D5" });
+  assert.equal(mapped.artDirection.direction.headingFont, "sans");
+  assert.equal(mapped.artDirection.direction.heroMaterialIds.length, 0);
+});
+
 test("researched objectives preserve distinct process and proof compositions", () => {
   const strategy = variedResearchStrategy();
   const research = { strategy } as unknown as Parameters<typeof researchedPublicationPlan>[0];
