@@ -128,6 +128,16 @@ test("detailed researched directions retain the full plan while fitting renderer
   assert.match(mapped.visualDirection, /Final placement\./u);
 });
 
+test("a researched closing slide can safely place a selected original", () => {
+  const strategy = researchStrategy();
+  const closing = strategy.plan.slides[1] as unknown as { role?: "closing"; materialIds: string[] };
+  closing.role = "closing";
+  closing.materialIds = [ids.screenshot];
+  const research = { strategy, planHash: "a".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const mapped = researchedPublicationPlan(research, applySelectedOriginals(brand(), [ids.screenshot]), "ai_preview", (index) => `slide-${index}`);
+  assert.equal(mapped.slides[1].creativePlan?.scene?.composition, "editorial-offset");
+});
+
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {
   const hash = "f".repeat(64);
   const row = { run_id: "run", snapshot_id: "snapshot", snapshot_version: 1, snapshot_hash: hash, status: "review_ready", snapshot: { entityResolution: { status: "resolved", confidence: "high", candidateId: "entity" }, evidence: [], strategy: researchStrategy(), critic: { outcome: "pass", issues: [] } } };
