@@ -60,6 +60,14 @@ async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promis
 export class BrandIntelligenceStore {
   constructor(private readonly pool: Pool) {}
 
+  async list(ownerId: string, limit = 20): Promise<ResearchRunView[]> {
+    const rows = (await this.pool.query(
+      "SELECT id FROM brand_research_run WHERE owner_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2",
+      [ownerId, limit],
+    )).rows as { id: string }[];
+    return Promise.all(rows.map((row) => this.read(ownerId, row.id)));
+  }
+
   async start(ownerId: string, input: unknown, commandKey: string, supersedesRunId: string | null = null): Promise<ResearchRunView> {
     requireCondition(commandKey.length >= 8 && commandKey.length <= 100, "command_key_invalid", "Research command key must contain 8–100 characters.");
     const serialized = stableJson(input);

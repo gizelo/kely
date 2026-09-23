@@ -10,6 +10,7 @@ class FakeStore {
   runs = new Map<string, ResearchRunView>();
   keys = new Map<string, string>();
   starts: { ownerId: string; supersedes: string | null }[] = [];
+  async list(ownerId: string, limit = 20) { return [...this.runs.values()].filter((run) => run.ownerId === ownerId).reverse().slice(0, limit); }
   async start(ownerId: string, input: unknown, commandKey: string, supersedes: string | null = null) {
     const priorId = this.keys.get(`${ownerId}:${commandKey}`);
     if (priorId) return this.read(ownerId, priorId);
@@ -69,6 +70,20 @@ test("answers and corrections create owner-scoped superseding runs", async () =>
   assert.equal(answered.supersedesRunId, parent.id);
   assert.equal(corrected.supersedesRunId, answered.id);
   await assert.rejects(service.read("another-owner", parent.id), { code: "research_not_found" });
+});
+
+test("research history is owner-scoped and omits internal keys and source payloads", async () => {
+  process.env.KELY_RESEARCH_MODE = "fixture";
+  const store = new FakeStore(); const service = new ResearchService(store, async () => {});
+  const first = await service.start(viewer, valid("history-command-1"));
+  await service.start(viewer, valid("history-command-2"));
+  await store.start("another-owner", { type: "start", researchMode: "fixture", research: valid(), materialIds: [] }, "other-history-command");
+  const history = await service.list(viewer.id);
+  assert.equal(history.length, 2);
+  assert.equal(history.at(-1)?.id, first.id);
+  assert.equal("commandKey" in history[0], false);
+  assert.equal("inputHash" in history[0], false);
+  assert.equal("sources" in history[0], false);
 });
 
 test("openai research mode fails closed without a dispatcher", async () => {
