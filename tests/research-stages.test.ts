@@ -228,6 +228,10 @@ test("new strategy contract requires explicit slide roles and information gain",
   assert.equal(slide.required.includes("role"), true);
   assert.equal(slide.required.includes("newInformation"), true);
   assert.deepEqual(slide.properties.role.enum, ["hook", "explain", "proof", "process", "closing"]);
+
+  const oversized = strategy();
+  oversized.plan.slides[0].visualDirection = "x".repeat(301);
+  assert.throws(() => parseStrategyDraftStageResponse(response(oversized)), /<=300 characters/u);
 });
 
 test("final plan rejects compliance-heavy copy and a redundant unrequested recap", () => {
