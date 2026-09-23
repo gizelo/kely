@@ -165,6 +165,19 @@ test("critic pass is immutable while one explicit corrected result is accepted",
   assert.equal(corrected.result.plan.angle, "A stronger angle");
 });
 
+test("critic corrections cannot invent evidence ids or claim keys", () => {
+  const original = strategy();
+  const changed = strategy();
+  changed.brandProfile.facts[0].evidenceIds = ["official-1-mutated"];
+  changed.brandProfile.tone[0].evidenceIds = ["invented-tone-source"];
+  changed.brandProfile.tone[0].provenance = "verified";
+  changed.plan.slides[0].claimKeys = ["invented_capability"];
+  const corrected = parseCheckStageResponse(response({ kind: "research_check", outcome: "corrected", issues: [{ code: "unsupported_fact", severity: "blocking", message: "Removed unsupported references.", slideIndex: 1 }], result: changed }), original, claims, [official]);
+  assert.deepEqual(corrected.result.brandProfile.facts[0].evidenceIds, [official.id]);
+  assert.deepEqual(corrected.result.brandProfile.tone[0], original.brandProfile.tone[0]);
+  assert.deepEqual(corrected.result.plan.slides[0].claimKeys, []);
+});
+
 test("final critic output must be issue-free and faithful to explicit brief constraints", () => {
   const original = strategy();
   const brief = { businessName: "Example", idea: "Create a 2-slide LinkedIn carousel about recovering time.", platform: "linkedin" as const, userSuppliedUrls: [] };

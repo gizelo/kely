@@ -149,11 +149,11 @@ export function extractionStageAttempt(input: ResearchStageAttemptInput) {
 }
 
 export function strategyStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and a persuasive platform-native publication plan, not a research report or compliance memo. Follow the owner's exact platform and explicit format or slide-count request. A single post must have exactly one hook slide. A carousel must have two to six slides, start with role hook, end with role closing, and slideCount must exactly equal the number of returned slides. When the owner did not specify a count, use the fewest slides needed for a strong story and compress slides that perform the same job. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, audience pains, proof, prices, offers, product capabilities, testimonials, or regulated claims. The hook must create a useful curiosity gap without inventing a claim. Every slide must declare its role and one newInformation contribution, advance a purposeful narrative, and use a distinct visual direction that the deterministic renderer can express through typography, editorial lines, modular blocks, equations, paired evidence, process stacks, selected originals, or a closing action frame. Put repeated provenance qualifications such as 'describes', 'states', or 'publicly says' in one compact source boundary or the caption instead of weakening the main copy on several slides. Use available brand cues honestly; if no original brand asset exists, call the direction proposed or observed rather than brand-faithful. Keep the caption complementary instead of repeating most slide copy, and make the CTA pay off the chosen angle. Do not return placeholder labels, merely restate the request, or repeat the same claim set, copy, objective, new information, or visual direction across slides." });
+  return researchTextStageAttempt({ ...input, stage: "strategy:0", schemaName: "kely_research_strategy_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.strategy, instructions: "Create one best brand profile and a persuasive platform-native publication plan, not a research report or compliance memo. Follow the owner's exact platform and explicit format or slide-count request. A single post must have exactly one hook slide. A carousel must have two to six slides, start with role hook, end with role closing, and slideCount must exactly equal the number of returned slides. When the owner did not specify a count, prefer three or four slides and use five or six only when every added slide contributes a distinct verified claim or necessary narrative step. Preserve claim provenance and reference only supplied claim, evidence, and material IDs. Do not invent facts, audience pains, proof, prices, offers, product capabilities, testimonials, or regulated claims. If the requested premise depends on an unsupported capability, replace it with the strongest audience-relevant angle supported by the evidence instead of preserving unsupported language or producing a disclaimer-led plan. The hook must create a useful curiosity gap without inventing a claim. Every slide must declare its role and one newInformation contribution, advance a purposeful narrative, and use a distinct visual direction that the deterministic renderer can express through typography, editorial lines, modular blocks, equations, paired evidence, process stacks, selected originals, or a closing action frame. Put provenance qualifications such as 'describes', 'states', or 'publicly says' once in the caption or a single compact source footer; do not repeat them in slide headlines or body copy. Use available brand cues honestly; if no original brand asset exists, call the direction proposed or observed rather than brand-faithful. Keep the caption complementary instead of repeating most slide copy, and make the CTA pay off the chosen angle. Do not return placeholder labels, merely restate the request, or repeat the same claim set, copy, objective, new information, or visual direction across slides." });
 }
 
 export function checkStageAttempt(input: ResearchStageAttemptInput) {
-  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Act as a demanding creative director and factual reviewer. Critique every item: owner brief and exact platform/format/count fidelity; a specific audience-relevant angle; a useful curiosity gap; narrative progression; distinct information gain and job for every slide; concise independently scannable copy; caption and CTA payoff; honest brand/material use; visual directions expressible by the deterministic renderer; platform fit; readability; and factual and regulated-claim safety. Fail a plan that is merely safe but dull, reads like a research or compliance memo, repeats the same descriptors in paraphrase, puts provenance qualifications throughout the main copy, repeats most slides in the caption or recap, uses a generic CTA unrelated to the angle, claims brand recognizability without an original cue, or promises visual directions the renderer cannot execute. When the owner did not specify a slide count, compress redundant slides. Return pass only when every rubric item passes and there are no issues. Otherwise return corrected with every issue recorded and fully repair the plan within the supplied evidence and brief. Never create new evidence, facts, audience pains, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
+  return researchTextStageAttempt({ ...input, stage: "check:0", schemaName: "kely_research_check_v2", schema: RESEARCH_STAGE_JSON_SCHEMAS.check, instructions: `Act as a demanding creative director and factual reviewer. Critique every item: owner brief and exact platform/format/count fidelity; a specific audience-relevant angle; a useful curiosity gap; narrative progression; distinct information gain and job for every slide; concise independently scannable copy; caption and CTA payoff; honest brand/material use; visual directions expressible by the deterministic renderer; platform fit; readability; and factual and regulated-claim safety. Fail a plan that is merely safe but dull, reads like a research or compliance memo, repeats the same descriptors in paraphrase, puts provenance qualifications throughout the main copy, repeats most slides in the caption or recap, uses a generic CTA unrelated to the angle, claims brand recognizability without an original cue, or promises visual directions the renderer cannot execute. When the owner did not specify a slide count, prefer three or four slides and compress redundant slides; five or six require distinct verified information on every additional slide. If the brief's premise is unsupported, fully replace it with the strongest verified audience-relevant angle rather than retaining unsupported terms in a question, hook, caption, or CTA. Keep attribution in the caption or one compact source footer, not repeated across slide copy. Return pass only when every rubric item passes and there are no issues. Otherwise return corrected with every issue recorded and fully repair every recorded issue within the supplied evidence and brief; do not return a corrected result that still contains an issue you identified. Never create or rewrite evidence IDs, facts, audience pains, claim keys, proof, prices, offers, capabilities, testimonials, or regulated claims. The orchestrator permits at most ${MAX_PLAN_CRITIC_REVISIONS} internal plan revisions.` });
 }
 
 function structuredOutput(raw: unknown): unknown {
@@ -243,6 +243,40 @@ function normalizeStrategyFacts(result: z.infer<typeof researchStrategySchema>, 
     return [fact];
   });
   return { ...result, brandProfile: { ...result.brandProfile, facts } };
+}
+
+function claimProvenance(claim: BrandIntelligenceClaim, evidence: ReadonlyMap<string, BrandEvidenceRecord>) {
+  if (claim.status === "confirmed") return "user_provided" as const;
+  if (claim.status === "proposed") return "proposed" as const;
+  if (claim.status === "contradicted") return "contradicted" as const;
+  const records = claim.evidenceIds.map((id) => evidence.get(id));
+  return records.length > 0 && records.every((record) => record?.sourceRole === "official") ? "verified" as const : "inferred" as const;
+}
+
+function normalizeCriticAttribution(result: ResearchStrategyOutput, original: ResearchStrategyOutput, claims: ReadonlyMap<string, BrandIntelligenceClaim>, evidence: Map<string, BrandEvidenceRecord>) {
+  const profile = { ...result.brandProfile };
+  for (const groupName of Object.keys(profile) as Array<keyof typeof profile>) {
+    const originals = new Map(original.brandProfile[groupName].map((rule) => [rule.key, rule]));
+    profile[groupName] = profile[groupName].flatMap((rule) => {
+      if (groupName === "facts") {
+        const claim = claims.get(rule.key);
+        if (!claim) return [];
+        return [{ ...rule, provenance: claimProvenance(claim, evidence), confidence: claim.confidence, evidenceIds: claim.evidenceIds }];
+      }
+      const source = originals.get(rule.key);
+      if (source) {
+        try {
+          validateAttribution(source, evidence, false);
+          return [{ ...rule, provenance: source.provenance, confidence: source.confidence, evidenceIds: source.evidenceIds }];
+        } catch {
+          return [];
+        }
+      }
+      return rule.provenance === "proposed" && rule.evidenceIds.length === 0 ? [rule] : [];
+    }) as typeof profile[typeof groupName];
+  }
+  const plan = { ...result.plan, slides: result.plan.slides.map((slide) => ({ ...slide, claimKeys: slide.claimKeys.filter((key) => claims.has(key)) })) };
+  return { ...result, brandProfile: profile, plan };
 }
 
 function validateStrategyShape(result: z.infer<typeof researchStrategySchema>) {
@@ -350,8 +384,11 @@ function canonical(value: unknown): string {
 
 export function parseCheckStageResponse(raw: unknown, original: ResearchStrategyOutput, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[], brief?: BrandResearchInput) {
   const check = researchCheckSchema.parse(structuredOutput(raw));
-  const result = validateStrategy(check.result, new Map(claims.map((item) => [item.key, item])), new Map(evidenceRecords.map((item) => [item.id, item])));
-  if (check.outcome === "pass" && (check.issues.length > 0 || canonical(result) !== canonical(original))) throw new Error("research_check_pass_invalid");
+  if (check.outcome === "pass" && (check.issues.length > 0 || canonical(check.result) !== canonical(original))) throw new Error("research_check_pass_invalid");
+  const claimMap = new Map(claims.map((item) => [item.key, item]));
+  const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
+  const candidate = check.outcome === "pass" ? check.result : normalizeCriticAttribution(check.result, original, claimMap, evidence);
+  const result = validateStrategy(candidate, claimMap, evidence);
   if (check.outcome === "corrected" && !check.issues.length) throw new Error("research_check_correction_invalid");
   return { ...check, result: brief ? validatePlanAcceptance(result, brief) : result };
 }
