@@ -155,6 +155,16 @@ test("a researched closing slide can safely place a selected original", () => {
   assert.ok((mapped.slides[1].creativePlan?.scene?.bodyZone.height ?? 0) >= 205);
 });
 
+test("research evidence ids fall back to typography when they are not owner originals", () => {
+  const strategy: any = structuredClone(researchStrategy());
+  strategy.plan.slides[0].materialIds = ["evidence-from-public-site"];
+  strategy.plan.slides[0].visualDirection = "Use an original image if available; otherwise use clean typography.";
+  const research = { strategy, planHash: "c".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.equal(mapped.slides[0].creativePlan?.materialId, "");
+  assert.equal(mapped.slides[0].creativePlan?.recipe, "type-poster");
+});
+
 test("researched directions select an explicitly named original and vary repeated image treatments", () => {
   const strategy = researchStrategy();
   strategy.plan.slideCount = 3;

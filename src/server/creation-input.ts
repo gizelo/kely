@@ -178,7 +178,7 @@ function researchedSlideMaterialId(slide: ResearchStrategyOutput["plan"]["slides
     return { id, score };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   if (matches.length === 1 || matches[0] && matches[0].score > (matches[1]?.score ?? 0)) return matches[0].id;
-  return selected;
+  return brand.art!.direction.heroMaterialIds.includes(selected) ? selected : "";
 }
 
 function researchedSlideRecipe(purpose: CreativePlan["purpose"], materialId: string, direction: string): CreativePlan["recipe"] {
@@ -197,7 +197,7 @@ function researchedSlideRationale(direction: string) {
 }
 
 function researchedArtDirection(research: FrozenCreationResearch, brand: FrozenBrand) {
-  const selectedMaterials = research.strategy.plan.slides.some((slide) => slide.materialIds.length > 0);
+  const selectedMaterials = research.strategy.plan.slides.some((slide) => Boolean(researchedSlideMaterialId(slide, brand)));
   if (selectedMaterials) return structuredClone(brand.art!);
   const evidence = [
     research.strategy.plan.visualSystem,
