@@ -23,14 +23,14 @@ test("private object transport handles missing objects and rejects provider fail
     new Response(null, { status: 404 }),
     new Response(JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" }), { status: 400, headers: { "content-type": "application/json" } }),
     new Response(null, { status: 500 }),
-    new Response(null, { status: 404 }),
+    new Response(JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" }), { status: 400, headers: { "content-type": "application/json" } }),
   ];
   const request = (async () => replies.shift()!) as typeof fetch;
   const storage = new SupabaseObjectTransport("https://abcdefghijklmnopqrst.supabase.co", "secret", "private", request);
   assert.equal(await storage.get("material/missing.png"), undefined);
   assert.equal(await storage.get("material/provider-missing.png"), undefined);
   await assert.rejects(storage.put("asset/failure.png", Buffer.from("x")), /upload failed \(500\)/u);
-  await storage.delete("asset/already-gone.png");
+  await storage.delete("asset/provider-already-gone.png");
 });
 
 test("private object transport does not hide unrelated 400 responses", async () => {

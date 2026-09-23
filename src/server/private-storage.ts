@@ -17,6 +17,13 @@ function encodedObjectPath(bucket: string, key: string) {
   return [bucket, ...key.split("/")].map(encodeURIComponent).join("/");
 }
 
+async function isMissingObject(response: Response) {
+  if (response.status === 404) return true;
+  if (response.status !== 400) return false;
+  const failure = await response.clone().json().catch(() => undefined) as { statusCode?: unknown; error?: unknown; message?: unknown } | undefined;
+  return failure?.statusCode === "404" && failure?.error === "not_found" && failure?.message === "Object not found";
+}
+
 export class SupabaseObjectTransport implements ObjectTransport {
   constructor(
     private readonly origin: string,
@@ -43,12 +50,7 @@ export class SupabaseObjectTransport implements ObjectTransport {
   async get(key: string, expectedSize = 16 * 1024 * 1024) {
     const maximum = Math.max(0, expectedSize);
     const response = await this.request(this.endpoint(key), { headers: this.headers(), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
-    if (response.status === 404) return undefined;
-    if (response.status === 400) {
-      const failure = await response.clone().json().catch(() => undefined) as { statusCode?: unknown; error?: unknown; message?: unknown } | undefined;
-      const missing = failure?.statusCode === "404" && failure?.error === "not_found" && failure?.message === "Object not found";
-      if (missing) return undefined;
-    }
+    if (await isMissingObject(response)) return undefined;
     if (!response.ok) throw new Error(`Private object download failed (${response.status}).`);
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (declared > maximum) throw new Error("Private object exceeds its manifest size.");
@@ -68,7 +70,7 @@ export class SupabaseObjectTransport implements ObjectTransport {
 
   async delete(key: string) {
     const response = await this.request(this.endpoint(key), { method: "DELETE", headers: this.headers(), redirect: "error", signal: AbortSignal.timeout(15_000) });
-    if (!response.ok && response.status !== 404) throw new Error(`Private object cleanup failed (${response.status}).`);
+    if (!response.ok && !(await isMissingObject(response))) throw new Error(`Private object cleanup failed (${response.status}).`);
   }
 }
 
