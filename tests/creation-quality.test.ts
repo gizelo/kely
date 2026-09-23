@@ -136,6 +136,7 @@ test("a researched closing slide can safely place a selected original", () => {
   const research = { strategy, planHash: "a".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
   const mapped = researchedPublicationPlan(research, applySelectedOriginals(brand(), [ids.screenshot]), "ai_preview", (index) => `slide-${index}`);
   assert.equal(mapped.slides[1].creativePlan?.scene?.composition, "editorial-offset");
+  assert.ok((mapped.slides[1].creativePlan?.scene?.bodyZone.height ?? 0) >= 205);
 });
 
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {
