@@ -19,12 +19,24 @@ test("private object transport authenticates server-side, disables upsert and ne
 });
 
 test("private object transport handles missing objects and rejects provider failures", async () => {
-  const statuses = [404, 500, 404];
-  const request = (async () => new Response(null, { status: statuses.shift()! })) as typeof fetch;
+  const replies = [
+    new Response(null, { status: 404 }),
+    new Response(JSON.stringify({ statusCode: "404", error: "not_found", message: "Object not found" }), { status: 400, headers: { "content-type": "application/json" } }),
+    new Response(null, { status: 500 }),
+    new Response(null, { status: 404 }),
+  ];
+  const request = (async () => replies.shift()!) as typeof fetch;
   const storage = new SupabaseObjectTransport("https://abcdefghijklmnopqrst.supabase.co", "secret", "private", request);
   assert.equal(await storage.get("material/missing.png"), undefined);
+  assert.equal(await storage.get("material/provider-missing.png"), undefined);
   await assert.rejects(storage.put("asset/failure.png", Buffer.from("x")), /upload failed \(500\)/u);
   await storage.delete("asset/already-gone.png");
+});
+
+test("private object transport does not hide unrelated 400 responses", async () => {
+  const request = (async () => new Response(JSON.stringify({ statusCode: "400", error: "invalid_request", message: "Bad request" }), { status: 400, headers: { "content-type": "application/json" } })) as typeof fetch;
+  const storage = new SupabaseObjectTransport("https://abcdefghijklmnopqrst.supabase.co", "secret", "private", request);
+  await assert.rejects(storage.get("material/failure.png"), /download failed \(400\)/u);
 });
 
 test("private object transport accepts a duplicate only when downloaded bytes match exactly", async () => {

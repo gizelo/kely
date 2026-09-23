@@ -44,6 +44,11 @@ export class SupabaseObjectTransport implements ObjectTransport {
     const maximum = Math.max(0, expectedSize);
     const response = await this.request(this.endpoint(key), { headers: this.headers(), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
     if (response.status === 404) return undefined;
+    if (response.status === 400) {
+      const failure = await response.clone().json().catch(() => undefined) as { statusCode?: unknown; error?: unknown; message?: unknown } | undefined;
+      const missing = failure?.statusCode === "404" && failure?.error === "not_found" && failure?.message === "Object not found";
+      if (missing) return undefined;
+    }
     if (!response.ok) throw new Error(`Private object download failed (${response.status}).`);
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (declared > maximum) throw new Error("Private object exceeds its manifest size.");
