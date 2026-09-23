@@ -178,6 +178,24 @@ test("critic corrections cannot invent evidence ids or claim keys", () => {
   assert.deepEqual(corrected.result.plan.slides[0].claimKeys, []);
 });
 
+test("critic corrections keep at most one material already present in the reviewed draft", () => {
+  const original = strategy();
+  original.plan.slides[0].materialIds = ["material-1"];
+  original.plan.slides[1].materialIds = ["material-2"];
+  const changed = strategy();
+  changed.plan.slides[0].materialIds = ["invented-material", "material-1", "material-2"];
+  changed.plan.slides[1].materialIds = ["material-2", "material-1"];
+
+  const corrected = parseCheckStageResponse(response({
+    kind: "research_check",
+    outcome: "corrected",
+    issues: [{ code: "brand_mismatch", severity: "warning", message: "Use only reviewed originals.", slideIndex: 0 }],
+    result: changed,
+  }), original, claims, [official]);
+
+  assert.deepEqual(corrected.result.plan.slides.map((slide) => slide.materialIds), [["material-1"], ["material-2"]]);
+});
+
 test("final critic output must be issue-free and faithful to explicit brief constraints", () => {
   const original = strategy();
   const brief = { businessName: "Example", idea: "Create a 2-slide LinkedIn carousel about recovering time.", platform: "linkedin" as const, userSuppliedUrls: [] };

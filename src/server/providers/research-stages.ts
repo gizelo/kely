@@ -275,7 +275,12 @@ function normalizeCriticAttribution(result: ResearchStrategyOutput, original: Re
       return rule.provenance === "proposed" && rule.evidenceIds.length === 0 ? [rule] : [];
     }) as typeof profile[typeof groupName];
   }
-  const plan = { ...result.plan, slides: result.plan.slides.map((slide) => ({ ...slide, claimKeys: slide.claimKeys.filter((key) => claims.has(key)) })) };
+  const originalMaterialIds = new Set(original.plan.slides.flatMap((slide) => slide.materialIds));
+  const plan = { ...result.plan, slides: result.plan.slides.map((slide) => ({
+    ...slide,
+    claimKeys: slide.claimKeys.filter((key) => claims.has(key)),
+    materialIds: slide.materialIds.filter((id) => originalMaterialIds.has(id)).slice(0, 1),
+  })) };
   return { ...result, brandProfile: profile, plan };
 }
 
