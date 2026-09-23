@@ -53,6 +53,7 @@ type CorrectionInput = z.infer<typeof researchCorrectionSchema>;
 type DurableResearchInput = { type: "start" | "answer" | "correct"; researchMode: "fixture" | "openai"; research: BrandResearchInput; materialIds: string[]; answers?: AnswerInput["answers"] };
 
 interface ResearchStore {
+  list(ownerId: string, limit?: number): Promise<ResearchRunView[]>;
   start(ownerId: string, input: unknown, commandKey: string, supersedesRunId?: string | null): Promise<ResearchRunView>;
   read(ownerId: string, runId: string): Promise<ResearchRunView>;
   appendStatus(ownerId: string, runId: string, status: "resolving" | "needs_input" | "failed", detail?: unknown): Promise<ResearchRunView>;
@@ -106,6 +107,24 @@ export class ResearchService {
   }
 
   async read(ownerId: string, id: string) { const run = await this.store.read(ownerId, id); return publicView(run, inputFromRun(run).researchMode); }
+
+  async list(ownerId: string) {
+    const runs = await this.store.list(ownerId);
+    return runs.map((run) => {
+      const selectedMode = inputFromRun(run).researchMode;
+      return {
+        id: run.id,
+        input: run.input,
+        supersedesRunId: run.supersedesRunId,
+        status: run.status,
+        statusDetail: run.statusDetail,
+        createdAt: run.createdAt,
+        snapshots: run.snapshots.map(({ id, version, hash, supersedesSnapshotId, acceptedAt }) => ({ id, version, hash, supersedesSnapshotId, acceptedAt })),
+        researchMode: selectedMode === "fixture" ? "simulated_fixture" as const : "openai" as const,
+        simulated: selectedMode === "fixture",
+      };
+    });
+  }
 
   async answer(viewer: Viewer, id: string, raw: unknown) {
     const selectedMode = mode(); const input = researchAnswerSchema.parse(raw); const parent = await this.store.read(viewer.id, id); const prior = inputFromRun(parent);

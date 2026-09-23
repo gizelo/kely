@@ -52,7 +52,8 @@ export async function handleApi(request: Request, path: string[]) {
     const [resource, id, action] = path;
     let result: unknown;
     if (resource === "research") {
-      if (!id && request.method === "POST") result = await researchService.start(user, researchStartSchema.parse(await body(request)));
+      if (!id && request.method === "GET") result = await researchService.list(user.id);
+      else if (!id && request.method === "POST") result = await researchService.start(user, researchStartSchema.parse(await body(request)));
       else if (id) {
         uuid.parse(id);
         if (!action && request.method === "GET") result = await researchService.read(user.id, id);
