@@ -113,6 +113,10 @@ test("researched objectives preserve distinct process and proof compositions", (
   const research = { strategy } as unknown as Parameters<typeof researchedPublicationPlan>[0];
   const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
   assert.deepEqual(mapped.slides.map((slide) => slide.creativePlan?.purpose), ["hook", "process", "proof", "closing"]);
+  assert.deepEqual(mapped.slides.map((slide) => slide.creativePlan?.scene?.composition), ["editorial-offset", "structured-stack", "signal-grid", "action-frame"]);
+  assert.ok(mapped.slides.every((slide) => (slide.creativePlan?.scene?.primitives.length ?? 0) >= 2));
+  const repeated = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.deepEqual(repeated.slides.map((slide) => slide.creativePlan?.scene), mapped.slides.map((slide) => slide.creativePlan?.scene));
 });
 
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {

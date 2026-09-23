@@ -15,6 +15,7 @@ import { researchStrategySchema, type ResearchStrategyOutput } from "./providers
 import { validateCreativePlan } from "./creative-intent";
 import type { SlideView } from "../shared/contracts";
 import type { CreativePlan } from "../shared/creative-intent";
+import { createDesignScene } from "./design-scene";
 
 type ResearchQueryClient = Pick<Pool | PoolClient, "query">;
 
@@ -177,7 +178,7 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
     const materialId = slide.materialIds[0] ?? "";
     requireCondition(slide.materialIds.length <= 1 && (!materialId || brand.art!.direction.heroMaterialIds.includes(materialId)), "research_plan_incompatible", "A reviewed slide references an unavailable or unsupported original material.", 409);
     const purpose = researchedSlidePurpose(slide, index, plan.slideCount);
-    const creativePlan = validateCreativePlan({
+    const basePlan: CreativePlan = {
       purpose,
       recipe: researchedSlideRecipe(purpose, materialId),
       materialId,
@@ -185,7 +186,8 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
       background: purpose === "closing" ? "foreground" : "background",
       alignment: purpose === "closing" ? "center" : "left",
       rationale: slide.visualDirection,
-    }, brand.art!);
+    };
+    const creativePlan = validateCreativePlan({ ...basePlan, scene: createDesignScene(basePlan, brand.art!, research.planHash, index) }, brand.art!);
     return { id: slideId(index), index, ...splitApprovedCopy(slide.copy), creativePlan, copyOrigin: origin, visualOrigin: "deterministic" };
   });
   return { platform: plan.platform, slideCount: plan.slideCount, slides, caption: plan.caption, visualDirection: [
