@@ -196,10 +196,39 @@ function researchedSlideRationale(direction: string) {
   return bounded.slice(0, boundary >= 240 ? boundary : 300).trimEnd();
 }
 
+function researchedArtDirection(research: FrozenCreationResearch, brand: FrozenBrand) {
+  const selectedMaterials = research.strategy.plan.slides.some((slide) => slide.materialIds.length > 0);
+  if (selectedMaterials) return structuredClone(brand.art!);
+  const evidence = [
+    research.strategy.plan.visualSystem,
+    ...research.strategy.plan.slides.map((slide) => slide.visualDirection),
+    ...research.strategy.brandProfile.palette.map((rule) => rule.value),
+    ...research.strategy.brandProfile.typography.map((rule) => rule.value),
+  ].join("\n");
+  const accent = evidence.match(/#[a-f\d]{6}/iu)?.[0].toUpperCase() ?? brand.art!.direction.palette.accent;
+  const light = /(?:light|bright|pale|hell(?:e|er|es|en)?|светл\p{L}*)[^\n]{0,40}(?:background|neutral|hintergrund|фон)/iu.test(evidence)
+    || /(?:background|neutral|hintergrund|фон)[^\n]{0,40}(?:light|bright|pale|hell(?:e|er|es|en)?|светл\p{L}*)/iu.test(evidence);
+  const dark = /(?:dark|dunkl\p{L}*|темн\p{L}*)[^\n]{0,40}(?:background|hintergrund|фон)/iu.test(evidence)
+    || /(?:background|hintergrund|фон)[^\n]{0,40}(?:dark|dunkl\p{L}*|темн\p{L}*)/iu.test(evidence);
+  if (!light && !dark && accent === brand.art!.direction.palette.accent) return structuredClone(brand.art!);
+  return freezeArtDirection({
+    policy: "art-direction-v1",
+    palette: light
+      ? { background: "#F7F7F2", foreground: "#17191C", accent, muted: "#DDE3D5" }
+      : { background: "#101114", foreground: "#F5F5F5", accent, muted: "#525660" },
+    headingFont: /\bunbounded\b/iu.test(evidence) ? "unbounded" : "sans",
+    composition: "editorial",
+    spacing: /(?:compact|dense|kompakt|плотн)/iu.test(evidence) ? "compact" : "open",
+    logoMaterialId: null,
+    heroMaterialIds: [],
+  }, brand.materials, Boolean(brand.brief.noPhoto));
+}
+
 export function researchedPublicationPlan(research: FrozenCreationResearch, brand: FrozenBrand, origin: CreationInput["origin"], slideId: (index: number) => string) {
   const { plan } = research.strategy;
   requireCondition(plan.slides.length === plan.slideCount && (plan.format === "single" ? plan.slideCount === 1 : plan.slideCount >= 2), "research_plan_incompatible", "The reviewed research plan has an inconsistent publication format.", 409);
   requireCondition(Boolean(brand.art), "research_plan_incompatible", "The reviewed plan cannot be rendered without a saved art direction.", 409);
+  const artDirection = researchedArtDirection(research, brand);
   const slides: SlideView[] = plan.slides.map((slide, index) => {
     requireCondition(slide.index === index + 1, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
     const materialId = researchedSlideMaterialId(slide, brand);
@@ -215,10 +244,10 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
       alignment: purpose === "closing" && !materialClosing ? "center" : "left",
       rationale: researchedSlideRationale(slide.visualDirection),
     };
-    const creativePlan = validateCreativePlan({ ...basePlan, scene: createDesignScene(basePlan, brand.art!, research.planHash, index) }, brand.art!);
+    const creativePlan = validateCreativePlan({ ...basePlan, scene: createDesignScene(basePlan, artDirection, research.planHash, index) }, artDirection);
     return { id: slideId(index), index, ...splitApprovedCopy(slide.copy), creativePlan, copyOrigin: origin, visualOrigin: "deterministic" };
   });
-  return { platform: plan.platform, slideCount: plan.slideCount, slides, caption: plan.caption, visualDirection: [
+  return { platform: plan.platform, slideCount: plan.slideCount, slides, caption: plan.caption, artDirection, visualDirection: [
     `Purpose: ${plan.purpose}`, `Audience: ${plan.audience}`, `Angle: ${plan.angle}`, `CTA: ${plan.cta}`, `Visual system: ${plan.visualSystem}`,
     ...plan.slides.map((slide) => `Slide ${slide.index} — ${slide.objective}: ${slide.visualDirection}`),
   ].join("\n") };
