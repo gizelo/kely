@@ -9,6 +9,7 @@ const ids = {
   reference: "00000000-0000-4000-a000-000000000001",
   logo: "00000000-0000-4000-a000-000000000002",
   screenshot: "00000000-0000-4000-a000-000000000003",
+  cubes: "00000000-0000-4000-a000-000000000004",
 };
 
 function brand(): FrozenBrand {
@@ -19,6 +20,7 @@ function brand(): FrozenBrand {
       { id: ids.reference, role: "reference" as const, kind: "image" as const, label: "Past post", sourceUrl: null, version: 1, contentHash: "a".repeat(64), width: 1080, height: 1350, bytes: 10, createdAt: "2026-09-21T00:00:00Z" },
       { id: ids.logo, role: "original" as const, kind: "image" as const, label: "Girex logo.png", sourceUrl: null, version: 1, contentHash: "b".repeat(64), width: 800, height: 240, bytes: 10, createdAt: "2026-09-21T00:00:00Z" },
       { id: ids.screenshot, role: "original" as const, kind: "image" as const, label: "Product screenshot", sourceUrl: null, version: 1, contentHash: "c".repeat(64), width: 1440, height: 900, bytes: 10, createdAt: "2026-09-21T00:00:00Z" },
+      { id: ids.cubes, role: "original" as const, kind: "image" as const, label: "Reflective glass cubes", sourceUrl: null, version: 1, contentHash: "d".repeat(64), width: 1280, height: 1280, bytes: 10, createdAt: "2026-09-21T00:00:00Z" },
     ],
     brief: { audience: "", direction: "decide" as const, requiredMaterialIds: [], noPhoto: false, blockingFacts: [], factResolution: "" },
     rendererPolicy: "art-direction-v1" as const,
@@ -137,6 +139,23 @@ test("a researched closing slide can safely place a selected original", () => {
   const mapped = researchedPublicationPlan(research, applySelectedOriginals(brand(), [ids.screenshot]), "ai_preview", (index) => `slide-${index}`);
   assert.equal(mapped.slides[1].creativePlan?.scene?.composition, "editorial-offset");
   assert.ok((mapped.slides[1].creativePlan?.scene?.bodyZone.height ?? 0) >= 205);
+});
+
+test("researched directions select an explicitly named original and vary repeated image treatments", () => {
+  const strategy = researchStrategy();
+  strategy.plan.slideCount = 3;
+  strategy.plan.slides = [
+    { ...strategy.plan.slides[0], materialIds: [ids.screenshot], visualDirection: "Use the full supplied interface screenshot as the dominant image." },
+    { index: 2, objective: "Explain", copy: "Map and cards\nTwo distinct regions", visualDirection: "Use an annotated close-up crop in bordered panels.", claimKeys: [], materialIds: [ids.screenshot] },
+    { ...strategy.plan.slides[1], index: 3, role: "closing", materialIds: [ids.screenshot], visualDirection: "Use the reflective cube graphic as supporting texture." },
+  ] as unknown as typeof strategy.plan.slides;
+  const research = { strategy, planHash: "b".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const selected = applySelectedOriginals(brand(), [ids.screenshot, ids.cubes]);
+  const mapped = researchedPublicationPlan(research, selected, "ai_preview", (index) => `slide-${index}`);
+  assert.deepEqual(mapped.slides.map((slide) => slide.creativePlan?.materialId), [ids.screenshot, ids.screenshot, ids.cubes]);
+  assert.deepEqual(mapped.slides.map((slide) => slide.creativePlan?.recipe), ["graphic-stage", "image-evidence", "graphic-stage"]);
+  assert.equal(mapped.slides[2].creativePlan?.background, "background");
+  assert.equal(mapped.slides[2].creativePlan?.alignment, "left");
 });
 
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {

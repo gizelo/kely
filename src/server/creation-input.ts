@@ -164,8 +164,28 @@ function researchedSlidePurpose(slide: ResearchStrategyOutput["plan"]["slides"][
   return "explain";
 }
 
-function researchedSlideRecipe(purpose: CreativePlan["purpose"], materialId: string): CreativePlan["recipe"] {
-  if (materialId) return purpose === "proof" ? "image-evidence" : "graphic-stage";
+function directionTokens(value: string) {
+  const ignored = new Set(["girex", "image", "graphic", "original", "material", "desktop", "interface", "supplied", "visual"]);
+  return new Set(value.normalize("NFKC").toLocaleLowerCase("en").match(/[\p{L}\p{N}]+/gu)?.map((token) => token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token).filter((token) => token.length >= 4 && !ignored.has(token)) ?? []);
+}
+
+function researchedSlideMaterialId(slide: ResearchStrategyOutput["plan"]["slides"][number], brand: FrozenBrand) {
+  const selected = slide.materialIds[0] ?? "";
+  const direction = directionTokens(slide.visualDirection);
+  const matches = brand.art!.direction.heroMaterialIds.map((id) => {
+    const material = brand.materials.find((item) => item.id === id);
+    const score = material ? [...directionTokens(material.label)].filter((token) => direction.has(token)).length : 0;
+    return { id, score };
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  if (matches.length === 1 || matches[0] && matches[0].score > (matches[1]?.score ?? 0)) return matches[0].id;
+  return selected;
+}
+
+function researchedSlideRecipe(purpose: CreativePlan["purpose"], materialId: string, direction: string): CreativePlan["recipe"] {
+  if (materialId) {
+    if (purpose === "proof" || purpose === "explain" && /(?:annotat|close[- ]?up|crop|panel|evidence)/iu.test(direction)) return "image-evidence";
+    return "graphic-stage";
+  }
   return purpose === "closing" ? "closing" : "type-poster";
 }
 
@@ -182,16 +202,17 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
   requireCondition(Boolean(brand.art), "research_plan_incompatible", "The reviewed plan cannot be rendered without a saved art direction.", 409);
   const slides: SlideView[] = plan.slides.map((slide, index) => {
     requireCondition(slide.index === index + 1, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
-    const materialId = slide.materialIds[0] ?? "";
+    const materialId = researchedSlideMaterialId(slide, brand);
     requireCondition(slide.materialIds.length <= 1 && (!materialId || brand.art!.direction.heroMaterialIds.includes(materialId)), "research_plan_incompatible", "A reviewed slide references an unavailable or unsupported original material.", 409);
     const purpose = researchedSlidePurpose(slide, index, plan.slideCount);
+    const materialClosing = purpose === "closing" && Boolean(materialId);
     const basePlan: CreativePlan = {
       purpose,
-      recipe: researchedSlideRecipe(purpose, materialId),
+      recipe: researchedSlideRecipe(purpose, materialId, slide.visualDirection),
       materialId,
       heading: purpose === "hook" || purpose === "closing" ? "large" : "medium",
-      background: purpose === "closing" ? "foreground" : "background",
-      alignment: purpose === "closing" ? "center" : "left",
+      background: purpose === "closing" && !materialClosing ? "foreground" : "background",
+      alignment: purpose === "closing" && !materialClosing ? "center" : "left",
       rationale: researchedSlideRationale(slide.visualDirection),
     };
     const creativePlan = validateCreativePlan({ ...basePlan, scene: createDesignScene(basePlan, brand.art!, research.planHash, index) }, brand.art!);
