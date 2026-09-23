@@ -26,7 +26,7 @@ export const RESEARCH_PACKAGE_STEPS = Object.freeze([
   { step: "entity-search-2", maximumMicros: searchMaximum() },
   { step: "extract:0", maximumMicros: textMaximum(2_048) },
   { step: "strategy:0", maximumMicros: textMaximum(4_096) },
-  { step: "check:0", maximumMicros: textMaximum(2_048) },
+  { step: "check:0", maximumMicros: textMaximum(4_096) },
 ]);
 
 export function researchPackageInput(ownerId: string, runId: string, researchInputHash: string, materialIds: string[] = []): BudgetPackageInput {

@@ -137,7 +137,7 @@ export async function dispatchEntitySearch(gateway: Gateway, input: EntitySearch
 }
 
 export function researchTextStageAttempt(input: ResearchTextStageInput): AttemptInput {
-  const outputTokens = input.stage === "strategy:0" ? 4_096 : 2_048;
+  const outputTokens = input.stage === "extract:0" ? 2_048 : 4_096;
   const request = buildTextRequest({ model: "gpt-5.6-luna", input: input.context, instructions: input.instructions, maxOutputTokens: outputTokens, jsonSchema: { name: input.schemaName, schema: input.schema } });
   return bindResearchAttempt({
     key: `kely:research:${input.runId}:${input.stage}`,

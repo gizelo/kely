@@ -92,6 +92,6 @@ test("all paid text research stages are bound to the same whole-run reservation"
     assert.equal(attempt.packageId, reservation.id);
     assert.equal(attempt.step, stage);
     assert.ok("max_output_tokens" in attempt.request);
-    assert.equal(attempt.request.max_output_tokens, stage === "strategy:0" ? 4_096 : 2_048);
+    assert.equal(attempt.request.max_output_tokens, stage === "extract:0" ? 2_048 : 4_096);
   }
 });
