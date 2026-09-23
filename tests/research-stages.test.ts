@@ -238,13 +238,12 @@ test("final plan rejects compliance-heavy copy and a redundant unrequested recap
   assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: compliance }), compliance, claims, [official], brief), /research_plan_compliance_tone/u);
 
   const recap = strategy();
-  recap.plan.slideCount = 5;
+  recap.plan.slideCount = 4;
   recap.plan.slides = [
     { index: 1, objective: "Frame the category", copy: "A clearer operating model", visualDirection: "Editorial opener", claimKeys: ["category"], materialIds: [] },
     { index: 2, objective: "Show the first capability", copy: "Coordinate the work", visualDirection: "Structured stack", claimKeys: ["category"], materialIds: [] },
     { index: 3, objective: "Show the second capability", copy: "Keep the context visible", visualDirection: "Signal grid", claimKeys: ["category"], materialIds: [] },
-    { index: 4, objective: "State the boundary", copy: "Review what is included", visualDirection: "Evidence pair", claimKeys: ["category"], materialIds: [] },
-    { index: 5, objective: "Repeat every point", copy: "The full list again", visualDirection: "Closing summary", claimKeys: ["category", "proof", "trust"], materialIds: [] },
+    { index: 4, objective: "Repeat every point", copy: "The full list again", visualDirection: "Closing summary", claimKeys: ["category", "proof", "trust"], materialIds: [] },
   ];
   recap.plan.slides[0].claimKeys = ["category", "proof", "trust"];
   assert.throws(() => parseCheckStageResponse(response({ kind: "research_check", outcome: "pass", issues: [], result: recap }), recap, claims, [official], brief), /research_plan_(claim_missing|redundant_recap)/u);

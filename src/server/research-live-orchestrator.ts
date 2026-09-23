@@ -57,8 +57,10 @@ const SAFE_PIPELINE_ERROR_CODES = new Set([
   "contradicted_provenance_invalid", "external_context_cannot_support_brand_fact", "inferred_provenance_invalid", "proposed_fact_invalid", "proposed_provenance_invalid",
   "research_check_correction_invalid", "research_check_pass_invalid", "research_claim_duplicate", "research_evidence_duplicate", "research_evidence_missing",
   "research_material_persistence_unavailable", "research_material_reservation_invalid", "research_material_reservation_unexpected", "research_package_reservation_invalid",
-  "research_plan_claim_missing", "research_plan_count_mismatch", "research_plan_format_mismatch", "research_plan_placeholder", "research_plan_platform_mismatch",
-  "research_plan_request_restatement", "research_plan_shape_invalid", "research_profile_fact_missing", "research_slide_index_invalid", "research_stage_context_too_large",
+  "research_plan_claim_missing", "research_plan_compliance_tone", "research_plan_copy_duplicate", "research_plan_count_mismatch", "research_plan_format_mismatch",
+  "research_plan_information_duplicate", "research_plan_objective_duplicate", "research_plan_placeholder", "research_plan_platform_mismatch", "research_plan_redundant_recap",
+  "research_plan_request_restatement", "research_plan_role_sequence_invalid", "research_plan_shape_invalid", "research_plan_visual_duplicate", "research_profile_fact_missing",
+  "research_slide_index_invalid", "research_stage_context_too_large",
   "research_stage_json_invalid", "research_stage_message_invalid", "research_stage_output_invalid", "user_provenance_invalid", "verified_provenance_invalid",
 ]);
 

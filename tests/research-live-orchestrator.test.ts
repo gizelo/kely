@@ -21,6 +21,7 @@ test("extraction can pause for an identity answer without failing the research r
 
 test("pipeline diagnostics expose only known stable codes", () => {
   assert.equal(safePipelineErrorCode(new Error("research_plan_shape_invalid")), "research_plan_shape_invalid");
+  assert.equal(safePipelineErrorCode(new Error("research_plan_compliance_tone")), "research_plan_compliance_tone");
   assert.equal(safePipelineErrorCode(new Error("private_token_123")), "research_pipeline_failed");
   assert.equal(safePipelineErrorCode("research_plan_shape_invalid"), "research_pipeline_failed");
 });
