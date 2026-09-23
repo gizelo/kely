@@ -196,6 +196,27 @@ test("critic corrections keep at most one material already present in the review
   assert.deepEqual(corrected.result.plan.slides.map((slide) => slide.materialIds), [["material-1"], ["material-2"]]);
 });
 
+test("critic corrections discard only fully empty slides appended beyond the declared count", () => {
+  const original = strategy();
+  const changed = strategy();
+  changed.plan.slides.push({ index: 1, role: "hook", newInformation: "", objective: "", copy: "", visualDirection: "", claimKeys: ["category"], materialIds: [] });
+  const corrected = parseCheckStageResponse(response({
+    kind: "research_check",
+    outcome: "corrected",
+    issues: [{ code: "narrative_gap", severity: "blocking", message: "Removed an empty trailing slide.", slideIndex: 0 }],
+    result: changed,
+  }), original, claims, [official]);
+  assert.equal(corrected.result.plan.slides.length, 2);
+
+  changed.plan.slides[2].copy = "A substantive extra slide";
+  assert.throws(() => parseCheckStageResponse(response({
+    kind: "research_check",
+    outcome: "corrected",
+    issues: [{ code: "narrative_gap", severity: "blocking", message: "An extra slide remains.", slideIndex: 0 }],
+    result: changed,
+  }), original, claims, [official]));
+});
+
 test("final critic output must be issue-free and faithful to explicit brief constraints", () => {
   const original = strategy();
   const brief = { businessName: "Example", idea: "Create a 2-slide LinkedIn carousel about recovering time.", platform: "linkedin" as const, userSuppliedUrls: [] };

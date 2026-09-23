@@ -387,8 +387,30 @@ function canonical(value: unknown): string {
   return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
 }
 
+function trimEmptyCriticSlideTail(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const check = value as Record<string, unknown>;
+  const result = check.result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return value;
+  const plan = (result as Record<string, unknown>).plan;
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) return value;
+  const planRecord = plan as Record<string, unknown>;
+  const count = planRecord.slideCount;
+  const slides = planRecord.slides;
+  if (!Number.isInteger(count) || typeof count !== "number" || !Array.isArray(slides) || slides.length <= count) return value;
+  const extras = slides.slice(count);
+  const empty = extras.every((slide) => {
+    if (!slide || typeof slide !== "object" || Array.isArray(slide)) return false;
+    const item = slide as Record<string, unknown>;
+    return [item.objective, item.copy, item.visualDirection, item.newInformation].every((text) => typeof text === "string" && text.trim() === "")
+      && Array.isArray(item.materialIds) && item.materialIds.length === 0;
+  });
+  if (!empty) return value;
+  return { ...check, result: { ...(result as Record<string, unknown>), plan: { ...planRecord, slides: slides.slice(0, count) } } };
+}
+
 export function parseCheckStageResponse(raw: unknown, original: ResearchStrategyOutput, claims: BrandIntelligenceClaim[], evidenceRecords: BrandEvidenceRecord[], brief?: BrandResearchInput) {
-  const check = researchCheckSchema.parse(structuredOutput(raw));
+  const check = researchCheckSchema.parse(trimEmptyCriticSlideTail(structuredOutput(raw)));
   if (check.outcome === "pass" && (check.issues.length > 0 || canonical(check.result) !== canonical(original))) throw new Error("research_check_pass_invalid");
   const claimMap = new Map(claims.map((item) => [item.key, item]));
   const evidence = new Map(evidenceRecords.map((item) => [item.id, item]));
