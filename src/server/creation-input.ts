@@ -169,12 +169,19 @@ function researchedSlideRecipe(purpose: CreativePlan["purpose"], materialId: str
   return purpose === "closing" ? "closing" : "type-poster";
 }
 
+function researchedSlideRationale(direction: string) {
+  if (direction.length <= 300) return direction;
+  const bounded = direction.slice(0, 300);
+  const boundary = bounded.lastIndexOf(" ");
+  return bounded.slice(0, boundary >= 240 ? boundary : 300).trimEnd();
+}
+
 export function researchedPublicationPlan(research: FrozenCreationResearch, brand: FrozenBrand, origin: CreationInput["origin"], slideId: (index: number) => string) {
   const { plan } = research.strategy;
   requireCondition(plan.slides.length === plan.slideCount && (plan.format === "single" ? plan.slideCount === 1 : plan.slideCount >= 2), "research_plan_incompatible", "The reviewed research plan has an inconsistent publication format.", 409);
   requireCondition(Boolean(brand.art), "research_plan_incompatible", "The reviewed plan cannot be rendered without a saved art direction.", 409);
   const slides: SlideView[] = plan.slides.map((slide, index) => {
-    requireCondition(slide.index === index + 1 && slide.visualDirection.length <= 300, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
+    requireCondition(slide.index === index + 1, "research_plan_incompatible", "A reviewed slide cannot be represented by the current renderer.", 409);
     const materialId = slide.materialIds[0] ?? "";
     requireCondition(slide.materialIds.length <= 1 && (!materialId || brand.art!.direction.heroMaterialIds.includes(materialId)), "research_plan_incompatible", "A reviewed slide references an unavailable or unsupported original material.", 409);
     const purpose = researchedSlidePurpose(slide, index, plan.slideCount);
@@ -185,7 +192,7 @@ export function researchedPublicationPlan(research: FrozenCreationResearch, bran
       heading: purpose === "hook" || purpose === "closing" ? "large" : "medium",
       background: purpose === "closing" ? "foreground" : "background",
       alignment: purpose === "closing" ? "center" : "left",
-      rationale: slide.visualDirection,
+      rationale: researchedSlideRationale(slide.visualDirection),
     };
     const creativePlan = validateCreativePlan({ ...basePlan, scene: createDesignScene(basePlan, brand.art!, research.planHash, index) }, brand.art!);
     return { id: slideId(index), index, ...splitApprovedCopy(slide.copy), creativePlan, copyOrigin: origin, visualOrigin: "deterministic" };

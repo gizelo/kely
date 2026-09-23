@@ -119,6 +119,15 @@ test("researched objectives preserve distinct process and proof compositions", (
   assert.deepEqual(repeated.slides.map((slide) => slide.creativePlan?.scene), mapped.slides.map((slide) => slide.creativePlan?.scene));
 });
 
+test("detailed researched directions retain the full plan while fitting renderer rationale", () => {
+  const strategy = researchStrategy();
+  strategy.plan.slides[0].visualDirection = `${"Detailed map composition with offer cards. ".repeat(20)}Final placement.`;
+  const research = { strategy, planHash: "f".repeat(64) } as unknown as Parameters<typeof researchedPublicationPlan>[0];
+  const mapped = researchedPublicationPlan(research, brand(), "ai_preview", (index) => `slide-${index}`);
+  assert.ok((mapped.slides[0].creativePlan?.rationale.length ?? 301) <= 300);
+  assert.match(mapped.visualDirection, /Final placement\./u);
+});
+
 test("research freeze fails closed for another owner, stale hash, non-final state or medium-confidence identity", async () => {
   const hash = "f".repeat(64);
   const row = { run_id: "run", snapshot_id: "snapshot", snapshot_version: 1, snapshot_hash: hash, status: "review_ready", snapshot: { entityResolution: { status: "resolved", confidence: "high", candidateId: "entity" }, evidence: [], strategy: researchStrategy(), critic: { outcome: "pass", issues: [] } } };
